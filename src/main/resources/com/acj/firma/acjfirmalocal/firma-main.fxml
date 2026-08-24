@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.Font?>
+<?import javafx.scene.image.ImageView?>
+<BorderPane xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.acj.firma.acjfirmalocal.controller.FirmaController"
+            style="-fx-background-color: #f8fafc;" prefWidth="650" prefHeight="550">
+
+    <top>
+<!--        <VBox spacing="5.0" style="-fx-background-color: #6b7280; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 6, 0, 0, 2);">-->
+        <VBox spacing="5.0" style="-fx-background-color: #ffffff; -fx-border-color: #000000; -fx-border-width: 0 0 1 0;">
+            <children>
+                <HBox alignment="CENTER_LEFT" spacing="20.0">
+                    <children>
+<!--                        <VBox alignment="CENTER" style="-fx-background-color: rgba(255,255,255,0.2); -fx-background-radius: 8; -fx-padding: 12;">-->
+<!--                            <children>-->
+<!--                                <ImageView fx:id="logoImage" fitHeight="45" preserveRatio="true" />-->
+<!--                            </children>-->
+<!--                        </VBox>-->
+
+                        <VBox spacing="3.0" HBox.hgrow="SOMETIMES">
+                            <children>
+                                <Label fx:id="lblAppTitle" text="ACJ Firma Digital" textFill="BLACK">
+                                    <font>
+                                        <Font name="System Bold" size="24.0" />
+                                    </font>
+                                </Label>
+                                <Label text="Componente de Firma Digital" textFill="BLACK"
+                                       style="-fx-font-size: 13px; -fx-font-weight: 400;"
+                                       wrapText="true" />
+                            </children>
+                        </VBox>
+
+                        <Region HBox.hgrow="ALWAYS" />
+
+                        <VBox alignment="CENTER_RIGHT" spacing="4.0">
+                            <VBox.margin>
+                                <Insets top="-5.0" />
+                            </VBox.margin>
+                            <children>
+                                <Label text="Versión 2.0" textFill="BLACK"
+                                       style="-fx-font-size: 11px; -fx-font-weight: 500;" />
+                                <HBox spacing="8.0" alignment="CENTER_RIGHT">
+                                    <children>
+                                    </children>
+                                </HBox>
+                            </children>
+                        </VBox>
+                    </children>
+                    <VBox.margin>
+                        <Insets bottom="10" />
+                    </VBox.margin>
+                </HBox>
+<!--                <HBox alignment="CENTER_LEFT" spacing="5.0">-->
+<!--                    <VBox.margin>-->
+<!--                        <Insets bottom="5.0" />-->
+<!--                    </VBox.margin>-->
+<!--                    <children>-->
+<!--                        <ProgressBar fx:id="progressBar" prefWidth="200.0" visible="false"-->
+<!--                                     style="-fx-accent: #22c55e; -fx-background-radius: 10;" />-->
+<!--                    </children>-->
+<!--                    <padding>-->
+<!--                        <Insets bottom="15.0" left="25.0" right="25.0" top="15.0" />-->
+<!--                    </padding>-->
+<!--                </HBox>-->
+            </children>
+            <padding>
+                <Insets bottom="0.0" left="25.0" right="25.0" top="20.0" />
+            </padding>
+        </VBox>
+    </top>
+
+    <center>
+        <ScrollPane fitToWidth="true" style="-fx-background-color: transparent; -fx-background: transparent;">
+            <content>
+                <VBox spacing="25.0" style="-fx-background-color: #f8fafc;"
+                      minWidth="550.0" maxWidth="Infinity">
+                    <children>
+
+                        <VBox spacing="20.0" style="-fx-background-color: #ffffff; -fx-background-radius: 12; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.06), 8, 0, 0, 1); -fx-padding: 25;"
+                              minWidth="500.0" maxWidth="Infinity">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" spacing="15.0">
+                                    <children>
+                                        <VBox spacing="2.0" HBox.hgrow="ALWAYS">
+                                            <children>
+                                                <Label text="Elige el Certificado para la firma"
+                                                       style="-fx-font-weight: 700; -fx-font-size: 16px; -fx-text-fill: #1f2937;" />
+                                            </children>
+                                        </VBox>
+                                    </children>
+                                </HBox>
+
+                                <ScrollPane fitToWidth="true" prefHeight="150.0" maxHeight="200.0"
+                                            style="-fx-background-color: transparent; -fx-background: transparent;">
+                                    <content>
+                                        <VBox fx:id="certificatesList" spacing="8.0" style="-fx-padding: 5;">
+                                        </VBox>
+                                    </content>
+                                </ScrollPane>
+                            </children>
+                        </VBox>
+
+                        <VBox spacing="20.0" style="-fx-background-color: #ffffff; -fx-background-radius: 12; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.06), 8, 0, 0, 1); -fx-padding: 25;"
+                              minWidth="500.0" maxWidth="Infinity">
+                            <children>
+                                <VBox spacing="20.0" alignment="CENTER">
+                                    <children>
+
+                                        <HBox spacing="15.0" alignment="CENTER">
+                                            <children>
+                                                <Button fx:id="btnCancel"
+                                                        text="CANCELAR"
+                                                        onAction="#onCancelar"
+                                                        style="-fx-background-color: #e8d4f0; -fx-text-fill: #7b5a8b; -fx-background-radius: 8; -fx-font-weight: 600; -fx-font-size: 13px;"
+                                                        prefHeight="45.0" prefWidth="120.0" />
+
+                                                <Button fx:id="btnSign"
+                                                        text="FIRMAR DOCUMENTOS"
+                                                        defaultButton="true"
+                                                        onAction="#onSignDocuments"
+                                                        style="-fx-background-color: #d4c4f0; -fx-text-fill: #5a4a7b; -fx-background-radius: 8; -fx-font-weight: 700; -fx-font-size: 14px;"
+                                                        prefHeight="45.0" prefWidth="200.0" />
+                                            </children>
+                                        </HBox>
+                                        <VBox spacing="10.0" style="-fx-background-color: #ffffff; -fx-background-radius: 12; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.06), 8, 0, 0, 1); -fx-padding: 20;"
+                                              VBox.vgrow="ALWAYS" minHeight="200.0">
+                                            <children>
+                                                <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                                    <children>
+                                                        <Label text="REGISTRO DE ACTIVIDAD"
+                                                               style="-fx-font-weight: 700; -fx-font-size: 14px; -fx-text-fill: #1f2937;" />
+                                                        <Region HBox.hgrow="ALWAYS" />
+                                                        <!-- Botón para limpiar logs -->
+                                                        <Button text="Limpiar"
+                                                                style="-fx-background-color: #6b7280; -fx-text-fill: white; -fx-background-radius: 6; -fx-font-size: 11px; -fx-padding: 4 12;"
+                                                                onAction="#onClearLogs" />
+                                                    </children>
+                                                </HBox>
+
+                                                <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                                                            style="-fx-background-color: transparent; -fx-background: transparent;">
+                                                    <content>
+                                                        <TextArea fx:id="logArea"
+                                                                  editable="false"
+                                                                  wrapText="true"
+                                                                  style="-fx-font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                                                 -fx-font-size: 11px;
+                                                 -fx-background-color: #1a1a1a;
+                                                 -fx-text-fill: #00ff00;
+                                                 -fx-background-radius: 8;
+                                                 -fx-border-radius: 8;
+                                                 -fx-border-color: #374151;
+                                                 -fx-border-width: 1;"
+                                                                  minHeight="180.0"
+                                                                  maxHeight="300.0" />
+                                                    </content>
+                                                </ScrollPane>
+                                            </children>
+                                        </VBox>
+
+                                    </children>
+                                </VBox>
+                            </children>
+                        </VBox>
+
+                    </children>
+                    <padding>
+                        <Insets bottom="30.0" left="30.0" right="30.0" top="20.0" />
+                    </padding>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </center>
+
+</BorderPane>
