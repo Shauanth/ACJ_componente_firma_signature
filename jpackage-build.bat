@@ -5,7 +5,7 @@ jpackage ^
   --input target ^
   --main-jar acj-firma-local-1.0-SNAPSHOT.jar ^
   --main-class com.acj.firma.acjfirmalocal.Launcher ^
-  --name "ACJ-Firma-Digital" ^
+  --name "ACJ-Signature-Agente" ^
   --type exe ^
   --app-version 1.0 ^
   --vendor "ACJ Software" ^
@@ -14,7 +14,7 @@ jpackage ^
   --win-shortcut ^
   --win-menu ^
   --license-file licencia.txt ^
-  --install-dir "C:\Program Files\ACJ-Firma-Digital"
+  --install-dir "C:\Program Files\ACJ-Signature-Agente"
   
 echo.
 echo Instalador generado exitosamente.

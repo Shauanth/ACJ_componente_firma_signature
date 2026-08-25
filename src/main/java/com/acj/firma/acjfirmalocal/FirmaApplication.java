@@ -4,6 +4,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 
 import javax.net.ssl.*;
@@ -32,14 +33,14 @@ public class FirmaApplication extends Application {
 
         scene.getRoot().getProperties().put("fxmlLoader", fxmlLoader);
 
-        stage.setTitle("ACJ Signature");
+        stage.setTitle("ACJ Signature Agente");
         stage.setScene(scene);
         stage.setMinWidth(800);
         stage.setMinHeight(600);
         stage.setResizable(true);
 
         try {
-            // stage.getIcons().add(new Image(getClass().getResourceAsStream("/images/acj-icon.png")));
+            stage.getIcons().add(new Image(getClass().getResourceAsStream("/images/acj-icon.png")));
         } catch (Exception e) {
             System.out.println("No se pudo cargar el icono: " + e.getMessage());
         }
@@ -72,7 +73,7 @@ public class FirmaApplication extends Application {
             procesarUri(applicationArgs[0]);
         }
 
-        System.out.println("ACJ Firma Digital iniciado correctamente" + (modoServicio ? " (modo servicio, ventana oculta hasta la próxima firma)" : ""));
+        System.out.println("ACJ Signature Agente iniciado correctamente" + (modoServicio ? " (modo servicio, ventana oculta hasta la próxima firma)" : ""));
     }
 
     /**
@@ -112,16 +113,7 @@ public class FirmaApplication extends Application {
                 if (query != null) {
                     Map<String, String> params = parseQueryString(query);
 
-                    String origen = params.get("origen");
-                    boolean esServicioSignature = "signature".equals(origen);
-
-                    System.out.println("DETECCIÓN DE SERVICIO:");
-                    System.out.println("   - Origen detectado: " + origen);
-                    System.out.println("   - Es servicio signature: " + esServicioSignature);
-
                     String documentosJson = params.get("documentos");
-                    String trama = params.get("trama");
-                    String callbackUrl = params.get("callback");
                     String idDocumento = params.get("idDocumento");
 
 //                    String token = params.get("token");
@@ -145,10 +137,8 @@ public class FirmaApplication extends Application {
 
                     System.out.println("PARÁMETROS RECIBIDOS:");
                     System.out.println("   - Documentos JSON: " + (documentosJson != null ? "Presente (" + documentosJson.length() + " chars)" : "Ausente"));
-                    System.out.println("   - Trama: " + (trama != null ? "Presente" : "Ausente"));
                     System.out.println("   - ID Documento: " + idDocumento);
                     System.out.println("   - Token: " + (token != null ? "Presente (decodificado)" : "Ausente"));
-                    System.out.println("   - Callback URL: " + callbackUrl);
                     System.out.println("   - Datos Backend: " + (datosBackendJson != null ? "Presente (" + datosBackendJson.length() + " chars)" : "Ausente"));
                     System.out.println("   - Base URL Backend: " + baseUrlBackend);
 
@@ -162,11 +152,8 @@ public class FirmaApplication extends Application {
 
                                     controllerRef.procesarDocumentosDesdeWeb(
                                             documentosJson,
-                                            trama,
-                                            callbackUrl,
                                             idDocumento,
                                             finalToken,
-                                            esServicioSignature,
                                             datosBackendJson,
                                             baseUrlBackend
                                     );

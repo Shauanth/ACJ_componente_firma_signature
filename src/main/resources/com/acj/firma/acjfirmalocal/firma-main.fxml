@@ -22,7 +22,7 @@
 
                         <VBox spacing="3.0" HBox.hgrow="SOMETIMES">
                             <children>
-                                <Label fx:id="lblAppTitle" text="ACJ Firma Digital" textFill="BLACK">
+                                <Label fx:id="lblAppTitle" text="ACJ Signature Agente" textFill="BLACK">
                                     <font>
                                         <Font name="System Bold" size="24.0" />
                                     </font>

@@ -7,7 +7,7 @@
   <groupId>com.acj.firma</groupId>
   <artifactId>acj-firma-local</artifactId>
   <version>1.0-SNAPSHOT</version>
-  <name>ACJ Firma Local</name>
+  <name>ACJ Signature Agente</name>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

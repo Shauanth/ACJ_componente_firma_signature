@@ -37,7 +37,7 @@ public class Launcher {
             // Lanzar la aplicación JavaFX
             FirmaApplication.main(args);
         } catch (Exception e) {
-            System.err.println("Error al iniciar ACJ Firma Digital:");
+            System.err.println("Error al iniciar ACJ Signature Agente:");
             e.printStackTrace();
 
             // Intentar con configuraciones alternativas

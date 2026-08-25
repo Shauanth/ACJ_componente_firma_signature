@@ -1,19 +1,13 @@
 package com.acj.firma.acjfirmalocal.service;
 
-import com.acj.firma.acjfirmalocal.model.DocumentoFirmadoDto;
-import com.acj.firma.acjfirmalocal.model.TramaInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.URI;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import javax.net.ssl.SSLContext;
@@ -32,23 +26,11 @@ public class HttpService {
     private HttpClient httpClient;
     private String baseUrl;
     private String authToken;
-    private boolean esSignature;
-
-    public HttpService() {
-        configurarCertificadoSSL();
-
-        this.baseUrl = ConfigService.getS3BackendUrl();
-        this.esSignature = false;
-
-        System.out.println("HttpService inicializado con baseUrl: " + baseUrl);
-    }
 
     public HttpService(String baseUrl) {
         this.baseUrl = baseUrl;
-        this.esSignature = baseUrl.contains("8070");
         configurarCertificadoSSL();
-        System.out.println("HttpService configurado para: " +
-                (esSignature ? "Signature" : "Apusign"));
+        System.out.println("HttpService configurado con baseUrl: " + baseUrl);
     }
 
     public void setAuthToken(String token) {
@@ -161,125 +143,6 @@ public class HttpService {
             System.err.println("Error en obtenerDocumentos: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Error al obtener documentos: " + e.getMessage(), e);
-        }
-    }
-
-    public String procesarFirmaFinal(String trama, Long idDocumento, String documentoFirmado) {
-        try {
-            String endpoint;
-            String jsonBody;
-
-            if (esSignature) {
-                endpoint = baseUrl + "/process";
-
-                jsonBody = String.format(
-                        "{\"idDocumento\":%d,\"documentoFirmadoBase64\":\"%s\",\"bucket\":\"%s\",\"usuarioModificacion\":\"%s\",\"nombreDocumento\":\"%s\",\"tamanoDocumento\":%d,\"codigoGenerado\":\"%s\"}",
-                        idDocumento,
-                        documentoFirmado,
-                        "aws-test-prueba",
-                        "Usuario Local",
-                        "documento.pdf",
-                        0,
-                        "DOC" + System.currentTimeMillis()
-                );
-            } else {
-                endpoint = baseUrl + "/firma-documento/procesar-firma-final";
-                jsonBody = String.format(
-                        "{\"trama\":\"%s\",\"idDocumento\":%d,\"tipoFirma\":1,\"documentoFirmado\":\"%s\"}",
-                        trama, idDocumento, documentoFirmado
-                );
-            }
-
-            System.out.println("Enviando a: " + endpoint);
-
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint))
-                    .timeout(Duration.ofSeconds(60))
-                    .header("Accept", "application/json")
-                    .header("Content-Type", "application/json");
-
-            if (esSignature) {
-                requestBuilder
-                        .header("codigoCanal", "APP-FIRMA")
-                        .header("codigoFuncionalidad", "FIRMA-WEB");
-            }
-
-            if (authToken != null && !authToken.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + authToken);
-            }
-
-            HttpRequest request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                System.out.println("Respuesta exitosa del " +
-                        (esSignature ? "Signature" : "Apusign"));
-                return response.body();
-            } else {
-                throw new RuntimeException("Error HTTP " + response.statusCode() + ": " + response.body());
-            }
-
-        } catch (Exception e) {
-            System.err.println("Error enviando documento firmado: " + e.getMessage());
-            throw new RuntimeException("Error al procesar firma final: " + e.getMessage(), e);
-        }
-    }
-
-    public String procesarFirmaFinalMultiple(String trama, List<DocumentoFirmadoDto> documentosFirmados) {
-        try {
-            System.out.println("Procesando firma final con múltiples documentos");
-            System.out.println("   - Cantidad de documentos: " + documentosFirmados.size());
-
-            String url = baseUrl + "/firma-documento/procesar-firma-final";
-
-            ObjectMapper mapper = new ObjectMapper();
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("trama", trama);
-            requestBody.put("documentosFirmados", documentosFirmados);
-            requestBody.put("tipoFirma", 1);
-            requestBody.put("imagenBiometrica", null);
-
-            String jsonBody = mapper.writeValueAsString(requestBody);
-
-            System.out.println("Request JSON generado (tamaño: " + jsonBody.length() + " chars)");
-
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(120))
-                    .header("Accept", "application/json")
-                    .header("Content-Type", "application/json")
-                    .header("codigoCanal", "APP-FIRMA")
-                    .header("codigoFuncionalidad", "FIRMA-WEB");
-
-            if (authToken != null && !authToken.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + authToken);
-                System.out.println("Token de autorización agregado");
-            }
-
-            HttpRequest request = requestBuilder
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
-
-            System.out.println("Enviando petición al backend...");
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-
-            System.out.println("Respuesta recibida - Status: " + response.statusCode());
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                System.out.println("Documentos procesados exitosamente");
-                return response.body();
-            } else {
-                String errorMsg = "Error HTTP " + response.statusCode() + ": " + response.body();
-                System.err.println("Error: " + errorMsg);
-                throw new RuntimeException(errorMsg);
-            }
-
-        } catch (Exception e) {
-            System.err.println("Error enviando documentos múltiples: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Error al procesar firma múltiple: " + e.getMessage(), e);
         }
     }
 
@@ -409,55 +272,6 @@ public class HttpService {
             System.err.println("Error convirtiendo respuesta S3: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Error procesando respuesta S3: " + e.getMessage(), e);
-        }
-    }
-
-    public TramaInfo decodificarTramaConBackend(String tramaEncriptada) {
-        try {
-            System.out.println("Decodificando trama usando endpoint del backend...");
-
-            String url = baseUrl + "/trama/decode";
-
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(url + "?trama=" + URLEncoder.encode(tramaEncriptada, "UTF-8")))
-                    .timeout(Duration.ofSeconds(30))
-                    .header("Accept", "application/json")
-                    .header("Content-Type", "application/json");
-
-            if (authToken != null && !authToken.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + authToken);
-                System.out.println("Token agregado a petición de decodificación");
-            }
-
-            HttpRequest request = requestBuilder.GET().build();
-
-            System.out.println("HTTP: Enviando petición de decodificación...");
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-
-            System.out.println("HTTP: Respuesta decodificación - Status: " + response.statusCode());
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                System.out.println("Trama decodificada exitosamente por el backend");
-
-                ObjectMapper mapper = new ObjectMapper();
-                TramaInfo tramaInfo = mapper.readValue(response.body(), TramaInfo.class);
-
-                System.out.println("TramaInfo obtenida:");
-                System.out.println("   - ID Seguimiento: " + tramaInfo.getIdSeguimientoFirma());
-                System.out.println("   - ID Tipo Firma: " + tramaInfo.getIdTipoFirma());
-                System.out.println("   - Email Firmante: " + tramaInfo.getEmailFirmante());
-                System.out.println("   - Documentos: " + (tramaInfo.getDocumentos() != null ? tramaInfo.getDocumentos().size() : 0));
-
-                return tramaInfo;
-            } else {
-                throw new RuntimeException("Error HTTP " + response.statusCode() + ": " + response.body());
-            }
-
-        } catch (Exception e) {
-            System.err.println("Error decodificando trama con backend: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Error al decodificar trama con backend: " + e.getMessage(), e);
         }
     }
 
