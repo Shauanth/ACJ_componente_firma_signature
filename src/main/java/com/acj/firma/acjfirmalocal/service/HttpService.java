@@ -129,7 +129,7 @@ public class HttpService {
                     .header("codigoCanal", "APP-FIRMA")
                     .header("codigoFuncionalidad", "FIRMA-WEB")
                     .header("nameBucket", "aws-test-prueba")
-                    .header("keyDocument", keyDocument);
+                    .header("keyDocument", java.net.URLEncoder.encode(keyDocument, "UTF-8"));
 
             if (authToken != null && !authToken.isEmpty()) {
                 requestBuilder.header("Authorization", "Bearer " + authToken);
