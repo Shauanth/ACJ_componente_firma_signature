@@ -18,7 +18,7 @@ public class ConfigService {
     private static final String KEY_SIGNATURE_BACKEND_URL = "signature.backend.url";
 
     private static final String DEFAULT_S3_BACKEND_URL = "http://localhost:8093/v1";
-    private static final String DEFAULT_SIGNATURE_BACKEND_URL = "http://localhost:8070/v1/postfirma";
+    private static final String DEFAULT_SIGNATURE_BACKEND_URL = "http://localhost:8093/v1/postfirma";
 
     private static final Properties properties = new Properties();
     private static boolean cargado = false;

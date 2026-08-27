@@ -1,5 +1,7 @@
 package com.acj.firma.acjfirmalocal.controller;
 
+import com.acj.firma.acjfirmalocal.FirmaApplication;
+
 import com.acj.firma.acjfirmalocal.model.*;
 import com.acj.firma.acjfirmalocal.service.*;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -604,6 +606,8 @@ public class FirmaController implements Initializable {
 
                     notificarExitoAlFrontend();
                     mostrarNotificacion("Éxito", "Documento firmado y guardado en el sistema", true);
+
+                    FirmaApplication.ocultarVentana();
                 });
 
             } catch (Exception e) {

@@ -92,6 +92,19 @@ public class FirmaApplication extends Application {
     }
 
     /**
+     * Oculta la ventana principal (no cierra el proceso: sigue corriendo en
+     * segundo plano esperando la próxima invocación). Se llama al terminar
+     * de firmar exitosamente.
+     */
+    public static void ocultarVentana() {
+        Platform.runLater(() -> {
+            if (primaryStageRef != null) {
+                primaryStageRef.hide();
+            }
+        });
+    }
+
+    /**
      * Procesa una URI acjfirma://... Se usa tanto en el arranque normal (args
      * de línea de comandos) como cuando el daemon ya corriendo recibe una
      * nueva invocación reenviada por Launcher vía POST /firma/invocar.
