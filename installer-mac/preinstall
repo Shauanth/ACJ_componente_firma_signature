@@ -1,0 +1,18 @@
+#!/bin/bash
+# Se ejecuta ANTES de copiar los archivos nuevos. Detiene y desregistra el
+# agente si ya había una versión instalada, para evitar dos instancias
+# compitiendo por el mismo puerto durante la actualización (equivalente al
+# "schtasks /end + /delete" que corre antes de reinstalar en Windows).
+
+CONSOLE_USER=$(stat -f%Su /dev/console)
+USER_HOME=$(eval echo "~$CONSOLE_USER")
+AGENT_PLIST="$USER_HOME/Library/LaunchAgents/com.acjfirma.agente.plist"
+
+if [ -f "$AGENT_PLIST" ]; then
+    USER_UID=$(id -u "$CONSOLE_USER")
+    launchctl bootout "gui/$USER_UID" "$AGENT_PLIST" 2>/dev/null
+    launchctl unload "$AGENT_PLIST" 2>/dev/null
+    rm -f "$AGENT_PLIST"
+fi
+
+exit 0

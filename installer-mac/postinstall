@@ -1,0 +1,26 @@
+#!/bin/bash
+# Se ejecuta DESPUES de que pkgbuild copia ACJ-Signature-Agente.app a
+# /Applications. Registra el agente para que arranque solo al iniciar sesión
+# (equivalente al Task Scheduler "onlogon" que usa el instalador de Windows).
+
+CONSOLE_USER=$(stat -f%Su /dev/console)
+USER_UID=$(id -u "$CONSOLE_USER")
+USER_HOME=$(eval echo "~$CONSOLE_USER")
+
+AGENTS_DIR="$USER_HOME/Library/LaunchAgents"
+AGENT_PLIST="$AGENTS_DIR/com.acjfirma.agente.plist"
+
+mkdir -p "$AGENTS_DIR"
+cp "$(dirname "$0")/com.acjfirma.agente.plist" "$AGENT_PLIST"
+chown "$CONSOLE_USER" "$AGENT_PLIST"
+chmod 644 "$AGENT_PLIST"
+
+# El protocolo acjfirma:// no necesita registro manual: macOS lo detecta solo
+# leyendo CFBundleURLTypes del Info.plist del .app en cuanto queda instalado
+# en /Applications (a diferencia de HKEY_CLASSES_ROOT en Windows).
+
+# Arrancarlo ya mismo como el usuario de la consola (no como root)
+sudo -u "$CONSOLE_USER" launchctl bootstrap "gui/$USER_UID" "$AGENT_PLIST" 2>/dev/null \
+    || sudo -u "$CONSOLE_USER" launchctl load "$AGENT_PLIST" 2>/dev/null
+
+exit 0
