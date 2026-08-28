@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.acjfirma.agente</string>
+
+    <!-- Ruta del binario dentro del .app generado por jpackage. Debe coincidir
+         con --name en build-mac.sh (Contents/MacOS/<name>). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/ACJ-Signature-Agente.app/Contents/MacOS/ACJ-Signature-Agente</string>
+        <string>--service</string>
+    </array>
+
+    <!-- Arranca al iniciar sesión del usuario (equivalente al schtasks /sc onlogon de Windows) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Si el proceso muere, launchd lo reinicia (equivalente al "reinicio si muere" del Task Scheduler) -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/acj-firma-agente.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/acj-firma-agente-error.log</string>
+</dict>
+</plist>

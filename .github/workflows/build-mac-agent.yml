@@ -1,0 +1,27 @@
+name: Build macOS agent (.pkg)
+
+# Se dispara solo a mano (Actions -> Build macOS agent (.pkg) -> Run workflow).
+# No corre en cada push, no interfiere con nada mas del repo.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-14   # runner Apple Silicon (arm64); cambiar a macos-13 para Intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build .pkg
+        run: |
+          chmod +x installer-mac/build-mac.sh installer-mac/preinstall installer-mac/postinstall
+          ./installer-mac/build-mac.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACJ-Signature-Agente-Setup-pkg
+          path: installer-mac/ACJ-Signature-Agente-Setup.pkg
