@@ -530,85 +530,118 @@ public class FirmaController implements Initializable {
         btnSign.setDisable(true);
 
         new Thread(() -> {
+            int totalDocumentos = documentosParaFirmar.size();
+            List<String> errores = new ArrayList<>();
+            int firmadosOk = 0;
+
             try {
                 System.out.println("=== INICIANDO FIRMA CON CONFIGURACIÓN DINÁMICA ===");
-                System.out.println("Tipo de servicio: SIGNATURE");
+                System.out.println("Tipo de servicio: SIGNATURE - documentos a firmar: " + totalDocumentos);
 
-                if (!procesoFirmaEnCurso) {
-                    System.out.println("Proceso cancelado por el usuario");
-                    return;
+                for (int i = 0; i < totalDocumentos; i++) {
+                    if (!procesoFirmaEnCurso) {
+                        System.out.println("Proceso cancelado por el usuario");
+                        return;
+                    }
+
+                    DocumentoFirma doc = documentosParaFirmar.get(i);
+                    final int indice = i + 1;
+
+                    try {
+                        System.out.println("Firmando documento " + indice + "/" + totalDocumentos + ": " + doc.getNombre());
+
+                        Platform.runLater(() -> actualizarEstado("Firmando documento " + indice + "/" + totalDocumentos + "..."));
+
+                        RequestFirma request = new RequestFirma(doc.getContenidoBase64(), cnReal);
+                        PosicionFirma pos = doc.getPosicionFirma();
+
+                        if (configuracionFirma != null) {
+                            request.setEmpresa(configuracionFirma.getEmpresa().isEmpty() ? organizacion : configuracionFirma.getEmpresa());
+                            request.setMotivo(configuracionFirma.getMotivo());
+                            request.setLocation(configuracionFirma.getUbicacion());
+                        } else {
+                            request.setEmpresa(organizacion);
+                        }
+
+                        if (pos != null) {
+                            request.setPagina(pos.getPagina());
+                            request.setX(pos.getX());
+                            request.setY(pos.getY());
+                        } else if (configuracionFirma != null) {
+                            request.setPagina(configuracionFirma.getPagina());
+                            request.setX(configuracionFirma.getPosicionX());
+                            request.setY(configuracionFirma.getPosicionY());
+                        }
+
+                        if (configuracionFirma != null && configuracionFirma.getImagen() != null && !configuracionFirma.getImagen().isEmpty()) {
+                            request.setImage(configuracionFirma.getImagen());
+                        } else if (request.isVisibleFirma()) {
+                            request.setImage(firmaLocalService.crearImagenFirmaBasica());
+                        }
+
+                        Object resultadoFirma = firmaLocalService.firmarDocumento(request);
+
+                        if (!procesoFirmaEnCurso) {
+                            System.out.println("Proceso cancelado durante la firma");
+                            return;
+                        }
+
+                        ResponseFirma resultado;
+                        if (resultadoFirma instanceof ResponseFirma) {
+                            resultado = (ResponseFirma) resultadoFirma;
+                        } else {
+                            throw new Exception(resultadoFirma.toString());
+                        }
+
+                        if (resultado.getErrorFirma() != null && !resultado.getErrorFirma().isEmpty()) {
+                            throw new Exception(resultado.getErrorFirma());
+                        }
+
+                        System.out.println("Documento " + indice + "/" + totalDocumentos + " firmado localmente, enviando al backend...");
+
+                        enviarABackendSignature(doc, resultado.getDocumentoFirmado());
+                        firmadosOk++;
+
+                    } catch (Exception eDoc) {
+                        String mensajeError = "Documento \"" + doc.getNombre() + "\": " + eDoc.getMessage();
+                        System.err.println("Error firmando documento " + indice + "/" + totalDocumentos + ": " + eDoc.getMessage());
+                        eDoc.printStackTrace();
+                        errores.add(mensajeError);
+                    }
                 }
 
-                DocumentoFirma primerDoc = documentosParaFirmar.get(0);
-                String documentoBase64 = primerDoc.getContenidoBase64();
+                final int totalOk = firmadosOk;
+                if (errores.isEmpty()) {
+                    Platform.runLater(() -> {
+                        procesoFirmaEnCurso = false;
+                        String mensajeExito = totalDocumentos == 1
+                                ? "Documento firmado y procesado exitosamente con Servicio Signature"
+                                : totalOk + " documentos firmados y procesados exitosamente";
 
-                System.out.println("Firmando documento localmente: " + primerDoc.getNombre());
+                        actualizarEstado(mensajeExito);
+                        btnSign.setDisable(false);
 
-                RequestFirma request = new RequestFirma(documentoBase64, cnReal);
+                        notificarExitoAlFrontend();
+                        mostrarNotificacion("Éxito", mensajeExito, true);
 
-                if (configuracionFirma != null) {
-                    request.setEmpresa(configuracionFirma.getEmpresa().isEmpty() ? organizacion : configuracionFirma.getEmpresa());
-                    request.setMotivo(configuracionFirma.getMotivo());
-                    request.setLocation(configuracionFirma.getUbicacion());
-                    request.setPagina(configuracionFirma.getPagina());
-                    request.setX(configuracionFirma.getPosicionX());
-                    request.setY(configuracionFirma.getPosicionY());
-
-                    if (configuracionFirma.getImagen() != null && !configuracionFirma.getImagen().isEmpty()) {
-                        request.setImage(configuracionFirma.getImagen());
-                    } else if (request.isVisibleFirma()) {
-                        request.setImage(firmaLocalService.crearImagenFirmaBasica());
-                    }
+                        FirmaApplication.ocultarVentana();
+                    });
                 } else {
-                    request.setEmpresa(organizacion);
-                    if (request.isVisibleFirma()) {
-                        request.setImage(firmaLocalService.crearImagenFirmaBasica());
-                    }
+                    String mensajeError = String.join(", ", errores);
+                    Platform.runLater(() -> {
+                        procesoFirmaEnCurso = false;
+
+                        actualizarEstado("Error en la firma");
+                        btnSign.setDisable(false);
+                        mostrarAlertaErrorDetallado("Error al Firmar Documento", mensajeError);
+
+                        if (totalOk > 0) {
+                            notificarExitoAlFrontend();
+                        } else {
+                            notificarErrorAlFrontend(mensajeError);
+                        }
+                    });
                 }
-
-                Object resultadoFirma = firmaLocalService.firmarDocumento(request);
-
-                if (!procesoFirmaEnCurso) {
-                    System.out.println("Proceso cancelado durante la firma");
-                    return;
-                }
-
-                ResponseFirma resultado;
-                if (resultadoFirma instanceof ResponseFirma) {
-                    resultado = (ResponseFirma) resultadoFirma;
-
-                    if (resultado.getErrorFirma() != null && !resultado.getErrorFirma().isEmpty()) {
-                        String errorDetallado = resultado.getErrorFirma();
-                        System.err.println("Error detallado en firma: " + errorDetallado);
-                        throw new Exception(errorDetallado);
-                    }
-                } else {
-                    String mensajeError = resultadoFirma.toString();
-                    System.err.println("Error en firma: " + mensajeError);
-                    throw new Exception(mensajeError);
-                }
-
-                if (resultado.getErrorFirma() != null && !resultado.getErrorFirma().isEmpty()) {
-                    throw new Exception("Error en firma: " + resultado.getErrorFirma());
-                }
-
-                System.out.println("Documento firmado localmente, enviando al backend...");
-
-                enviarABackendSignature(resultado.getDocumentoFirmado());
-
-                Platform.runLater(() -> {
-                    procesoFirmaEnCurso = false;
-
-                    String mensajeExito = "Documento firmado y procesado exitosamente con Servicio Signature";
-
-                    actualizarEstado(mensajeExito);
-                    btnSign.setDisable(false);
-
-                    notificarExitoAlFrontend();
-                    mostrarNotificacion("Éxito", "Documento firmado y guardado en el sistema", true);
-
-                    FirmaApplication.ocultarVentana();
-                });
 
             } catch (Exception e) {
                 System.err.println("Error en proceso de firma: " + e.getMessage());
@@ -671,20 +704,43 @@ public class FirmaController implements Initializable {
         return mensajeError;
     }
 
-    private String enviarABackendSignature(String documentoFirmado) throws Exception {
-        System.out.println("Enviando documento firmado al SERVICIO SIGNATURE");
+    private String enviarABackendSignature(DocumentoFirma doc, String documentoFirmado) throws Exception {
+        System.out.println("Enviando documento firmado al SERVICIO SIGNATURE: " + doc.getNombre());
 
         System.out.println("Token recibido:");
         System.out.println("  - Longitud: " + (tokenAuth != null ? tokenAuth.length() : "null"));
         System.out.println("  - Primeros 50 chars: " + (tokenAuth != null ? tokenAuth.substring(0, Math.min(50, tokenAuth.length())) : "null"));
         System.out.println("  - Últimos 20 chars: " + (tokenAuth != null ? tokenAuth.substring(Math.max(0, tokenAuth.length()-20)) : "null"));
 
-        if (datosBackendJson == null) {
-            throw new Exception("No se recibieron datos del backend para el servicio signature");
-        }
+        Long idDocumentoBackend;
+        String bucket;
+        String usuarioModificacion;
+        String nombreDocumento;
+        int tamanoDocumento;
+        String codigoGenerado;
 
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode datosBackend = mapper.readTree(datosBackendJson);
+        if (doc.getIdDocumento() != null) {
+            idDocumentoBackend = doc.getIdDocumento();
+            bucket = doc.getBucket();
+            usuarioModificacion = doc.getUsuarioModificacion();
+            nombreDocumento = doc.getNombreDocumento();
+            tamanoDocumento = doc.getTamanoDocumento() != null ? doc.getTamanoDocumento().intValue() : 0;
+            codigoGenerado = doc.getCodigoGenerado();
+        } else {
+            if (datosBackendJson == null) {
+                throw new Exception("No se recibieron datos del backend para el servicio signature");
+            }
+
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode datosBackend = mapper.readTree(datosBackendJson);
+
+            idDocumentoBackend = datosBackend.path("idDocumento").asLong();
+            bucket = datosBackend.path("bucket").asText();
+            usuarioModificacion = datosBackend.path("usuarioModificacion").asText();
+            nombreDocumento = datosBackend.path("nombreDocumento").asText();
+            tamanoDocumento = datosBackend.path("tamanoDocumento").asInt();
+            codigoGenerado = datosBackend.path("codigoGenerado").asText();
+        }
 
         String baseUrl = baseUrlBackend != null ? baseUrlBackend : ConfigService.getSignatureBackendUrl();
 
@@ -692,13 +748,13 @@ public class FirmaController implements Initializable {
         httpService.setAuthToken(tokenAuth);
 
         return httpService.procesarFirmaSignature(
-                datosBackend.path("idDocumento").asLong(),
+                idDocumentoBackend,
                 documentoFirmado,
-                datosBackend.path("bucket").asText(),
-                datosBackend.path("usuarioModificacion").asText(),
-                datosBackend.path("nombreDocumento").asText(),
-                datosBackend.path("tamanoDocumento").asInt(),
-                datosBackend.path("codigoGenerado").asText()
+                bucket,
+                usuarioModificacion,
+                nombreDocumento,
+                tamanoDocumento,
+                codigoGenerado
         );
     }
 
@@ -746,63 +802,82 @@ public class FirmaController implements Initializable {
             System.out.println("PROCESANDO CON SERVICIO SIGNATURE");
 
             ObjectMapper mapper = new ObjectMapper();
-            JsonNode documentosArray = mapper.readTree(documentosJson);
+            JsonNode documentosMetadatos = mapper.readTree(documentosJson);
 
-            String keyDocumento = null;
-            if (documentosArray.has("documentos") && documentosArray.get("documentos").isArray()) {
-                JsonNode primerDoc = documentosArray.get("documentos").get(0);
-                keyDocumento = primerDoc.path("keyDocumento").asText();
-
-                System.out.println("Key del documento extraído: " + keyDocumento);
+            if (!documentosMetadatos.has("documentos") || !documentosMetadatos.get("documentos").isArray()
+                    || documentosMetadatos.get("documentos").isEmpty()) {
+                throw new RuntimeException("No se recibieron documentos para firmar");
             }
-
-            if (keyDocumento == null || keyDocumento.isEmpty()) {
-                throw new RuntimeException("No se pudo extraer keyDocumento de los metadatos");
-            }
-
-            System.out.println("Obteniendo documento del S3");
 
             HttpService httpServiceS3 = new HttpService(ConfigService.getS3BackendUrl());
             httpServiceS3.setAuthToken(token);
 
-            String documentoJsonS3 = httpServiceS3.obtenerDocumentos(keyDocumento);
-            System.out.println("Documento obtenido del S3 exitosamente");
+            List<DocumentoFirma> documentosFinal = new ArrayList<>();
 
-            documentosParaFirmar = documentoService.procesarTramaDocumentos(documentoJsonS3);
+            for (JsonNode metaDoc : documentosMetadatos.get("documentos")) {
+                String keyDocumento = metaDoc.path("keyDocumento").asText();
+                if (keyDocumento == null || keyDocumento.isEmpty()) {
+                    throw new RuntimeException("No se pudo extraer keyDocumento de los metadatos");
+                }
 
-            if (documentosParaFirmar.isEmpty()) {
-                throw new RuntimeException("No se pudo procesar el documento obtenido del S3");
+                System.out.println("Obteniendo documento del S3: " + keyDocumento);
+                String documentoJsonS3 = httpServiceS3.obtenerDocumentos(keyDocumento);
+                JsonNode s3Root = mapper.readTree(documentoJsonS3);
+                JsonNode s3Docs = s3Root.path("documentos");
+                if (!s3Docs.isArray() || s3Docs.isEmpty()) {
+                    throw new RuntimeException("No se pudo obtener del S3 el documento: " + keyDocumento);
+                }
+
+                DocumentoFirma doc = new DocumentoFirma();
+                doc.setNombre(metaDoc.path("nombre").asText(metaDoc.path("titulo").asText("Documento")));
+                doc.setKeyDocumento(keyDocumento);
+                doc.setContenidoBase64(s3Docs.get(0).path("contenido").asText());
+                doc.setTipo("PDF");
+
+                PosicionFirma pos = new PosicionFirma();
+                JsonNode posNode = metaDoc.path("posicionFirma");
+                pos.setPagina(!posNode.isMissingNode() ? posNode.path("pagina").asInt(1) : metaDoc.path("pagina").asInt(1));
+                pos.setX(!posNode.isMissingNode() ? posNode.path("x").asInt(100) : metaDoc.path("posicionX").asInt(100));
+                pos.setY(!posNode.isMissingNode() ? posNode.path("y").asInt(100) : metaDoc.path("posicionY").asInt(100));
+                doc.setPosicionFirma(pos);
+
+                JsonNode datosBackendNode = metaDoc.path("datosBackend");
+                if (!datosBackendNode.isMissingNode() && !datosBackendNode.isNull()) {
+                    doc.setIdDocumento(datosBackendNode.path("idDocumento").asLong());
+                    doc.setBucket(datosBackendNode.path("bucket").asText());
+                    doc.setUsuarioModificacion(datosBackendNode.path("usuarioModificacion").asText());
+                    doc.setNombreDocumento(datosBackendNode.path("nombreDocumento").asText());
+                    doc.setTamanoDocumento(datosBackendNode.path("tamanoDocumento").asLong());
+                    doc.setCodigoGenerado(datosBackendNode.path("codigoGenerado").asText());
+                }
+
+                documentosFinal.add(doc);
+                System.out.println("Documento preparado: " + doc.getNombre() + " (página=" + pos.getPagina()
+                        + ", x=" + pos.getX() + ", y=" + pos.getY() + ")");
             }
+
+            documentosParaFirmar = documentosFinal;
 
             ConfiguracionFirma configTrama = new ConfiguracionFirma();
             configTrama.setMotivo("Firma digital - Servicio Signature");
             configTrama.setUbicacion("Lima, Perú");
             configTrama.setEmpresa("");
 
-            JsonNode documentosMetadatos = mapper.readTree(documentosJson);
-            if (documentosMetadatos.has("documentos") && documentosMetadatos.get("documentos").isArray()) {
-                JsonNode primerDoc = documentosMetadatos.get("documentos").get(0);
-                configTrama.setPosicionX(primerDoc.path("posicionX").asInt(100));
-                configTrama.setPosicionY(primerDoc.path("posicionY").asInt(100));
-                configTrama.setPagina(primerDoc.path("pagina").asInt(1));
-
-                System.out.println("Posiciones extraídas de metadatos:");
-                System.out.println("   - Página: " + configTrama.getPagina());
-                System.out.println("   - Posición X: " + configTrama.getPosicionX());
-                System.out.println("   - Posición Y: " + configTrama.getPosicionY());
-            }
+            PosicionFirma primeraPos = documentosFinal.get(0).getPosicionFirma();
+            configTrama.setPosicionX(primeraPos.getX());
+            configTrama.setPosicionY(primeraPos.getY());
+            configTrama.setPagina(primeraPos.getPagina());
 
             this.configuracionFirma = configTrama;
 
+            int totalDocumentos = documentosFinal.size();
             Platform.runLater(() -> {
                 btnSign.setDisable(false);
-                actualizarEstado("Documento listo para firma (Servicio Signature)");
-                mostrarNotificacion("Documento recibido", "Documento listo para firma", true);
+                actualizarEstado("Documento(s) listo(s) para firma (Servicio Signature): " + totalDocumentos);
+                mostrarNotificacion("Documentos recibidos", totalDocumentos + " documento(s) listo(s) para firma", true);
                 actualizarEstadoDocumentos(true);
 
-                System.out.println("SERVICIO SIGNATURE CONFIGURADO EXITOSAMENTE");
-                System.out.println("Documento obtenido del S3 y configurado para firma");
-                System.out.println("Posiciones: X=" + configTrama.getPosicionX() + ", Y=" + configTrama.getPosicionY() + ", Página=" + configTrama.getPagina());
+                System.out.println("SERVICIO SIGNATURE CONFIGURADO EXITOSAMENTE - " + totalDocumentos + " documento(s)");
             });
 
         } catch (Exception e) {

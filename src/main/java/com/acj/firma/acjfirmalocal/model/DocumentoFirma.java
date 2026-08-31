@@ -11,4 +11,10 @@ public class DocumentoFirma {
     private String contenidoBase64;
     private String tipo;
     private PosicionFirma posicionFirma;
+
+    private String bucket;
+    private String usuarioModificacion;
+    private String nombreDocumento;
+    private Long tamanoDocumento;
+    private String codigoGenerado;
 }

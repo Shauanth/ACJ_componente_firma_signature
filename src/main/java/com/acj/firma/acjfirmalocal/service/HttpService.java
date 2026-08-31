@@ -160,16 +160,16 @@ public class HttpService {
 
             String url = baseUrl + "/process";
 
-            String jsonBody = String.format(
-                    "{\"idDocumento\":%d,\"documentoFirmadoBase64\":\"%s\",\"bucket\":\"%s\",\"usuarioModificacion\":\"%s\",\"nombreDocumento\":\"%s\",\"tamanoDocumento\":%d,\"codigoGenerado\":\"%s\"}",
-                    idDocumento,
-                    documentoFirmadoBase64,
-                    bucket,
-                    usuarioModificacion,
-                    nombreDocumento,
-                    tamanoDocumento,
-                    codigoGenerado
-            );
+            ObjectMapper bodyMapper = new ObjectMapper();
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("idDocumento", idDocumento);
+            body.put("documentoFirmadoBase64", documentoFirmadoBase64);
+            body.put("bucket", bucket);
+            body.put("usuarioModificacion", usuarioModificacion);
+            body.put("nombreDocumento", nombreDocumento);
+            body.put("tamanoDocumento", tamanoDocumento);
+            body.put("codigoGenerado", codigoGenerado);
+            String jsonBody = bodyMapper.writeValueAsString(body);
 
             System.out.println("Enviando a: " + url);
             System.out.println("Payload preparado (tamaño: " + jsonBody.length() + " chars)");
