@@ -8,7 +8,7 @@ target/
 /runtime/
 # Carpeta app-image que genera jpackage-build.bat (debe coincidir con --name);
 # pesa cientos de MB (runtime + jar) y no debe subirse al repo.
-/ACJ-Signature-Agente/
+/ACJSignature/
 *.exe
 *.msi
 

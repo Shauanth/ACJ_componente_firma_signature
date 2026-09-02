@@ -217,6 +217,15 @@ public class FirmaController implements Initializable {
                 System.out.println("Certificados obtenidos: " + certificadosDisponibles);
                 System.out.println("Cantidad: " + certificadosDisponibles.size());
 
+                // El log de consola no llega al usuario final en el instalador
+                // empaquetado: si CertificadoService ocultó algún certificado
+                // ambiguo (misma identidad duplicada en el almacén, uno
+                // vencido), hay que decírselo en la propia ventana para que
+                // sepa qué certificado borrar en certmgr.msc.
+                for (String advertencia : certificadoService.obtenerAdvertencias()) {
+                    mostrarAlerta("Certificado no disponible", advertencia);
+                }
+
                 certificatesList.getChildren().clear();
 
                 if (certificadosDisponibles.isEmpty()) {
@@ -473,6 +482,9 @@ public class FirmaController implements Initializable {
 
     private void cerrarAplicativo() {
         System.out.println("Cerrando aplicativo...");
+        if (localServer != null) {
+            localServer.detener();
+        }
         Platform.runLater(() -> {
             try {
                 Stage stage = (Stage) btnCancel.getScene().getWindow();
@@ -622,7 +634,7 @@ public class FirmaController implements Initializable {
                         btnSign.setDisable(false);
 
                         notificarExitoAlFrontend();
-                        mostrarNotificacion("Éxito", mensajeExito, true);
+                        mostrarAlertaExito(mensajeExito);
 
                         FirmaApplication.ocultarVentana();
                     });
@@ -640,6 +652,8 @@ public class FirmaController implements Initializable {
                         } else {
                             notificarErrorAlFrontend(mensajeError);
                         }
+
+                        FirmaApplication.ocultarVentana();
                     });
                 }
 
@@ -655,30 +669,44 @@ public class FirmaController implements Initializable {
                     btnSign.setDisable(false);
                     mostrarAlertaErrorDetallado("Error al Firmar Documento", mensajeError);
                     notificarErrorAlFrontend(mensajeError);
+
+                    FirmaApplication.ocultarVentana();
                 });
             }
         }).start();
     }
 
+    private void mostrarAlertaExito(String mensaje) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Éxito");
+        alert.setHeaderText(null);
+        alert.setContentText(mensaje);
+        alert.showAndWait();
+    }
+
+    /**
+     * Se llama siempre desde dentro de un Platform.runLater ya en curso (ver
+     * procesarFirmaDocumentoUnico): showAndWait() bloquea aquí mismo para que
+     * el cierre del aplicativo, que se dispara justo después en el llamador,
+     * ocurra recién cuando el usuario cierra esta alerta.
+     */
     private void mostrarAlertaErrorDetallado(String titulo, String mensajeCompleto) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle(titulo);
-            alert.setHeaderText("Ocurrió un error durante el proceso de firma");
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(titulo);
+        alert.setHeaderText("Ocurrió un error durante el proceso de firma");
 
-            String mensajeFormateado = formatearMensajeError(mensajeCompleto);
+        String mensajeFormateado = formatearMensajeError(mensajeCompleto);
 
-            TextArea textArea = new TextArea(mensajeFormateado);
-            textArea.setEditable(false);
-            textArea.setWrapText(true);
-            textArea.setMaxWidth(Double.MAX_VALUE);
-            textArea.setMaxHeight(Double.MAX_VALUE);
-            textArea.setPrefRowCount(10);
+        TextArea textArea = new TextArea(mensajeFormateado);
+        textArea.setEditable(false);
+        textArea.setWrapText(true);
+        textArea.setMaxWidth(Double.MAX_VALUE);
+        textArea.setMaxHeight(Double.MAX_VALUE);
+        textArea.setPrefRowCount(10);
 
-            alert.getDialogPane().setContent(textArea);
-            alert.getDialogPane().setMinWidth(600);
-            alert.showAndWait();
-        });
+        alert.getDialogPane().setContent(textArea);
+        alert.getDialogPane().setMinWidth(600);
+        alert.showAndWait();
     }
 
     private String formatearMensajeError(String mensajeError) {
