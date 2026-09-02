@@ -10,7 +10,8 @@ jpackage ^
   --app-version 1.0 ^
   --vendor "ACJ Software" ^
   --icon icon.ico ^
-  --runtime-image runtime
+  --runtime-image runtime ^
+  --java-options "--add-opens=java.base/java.security=ALL-UNNAMED"
 
 echo.
 echo App-image generado en .\ACJSignature\ - empaquetarlo con installer\setup.iss (Inno Setup).

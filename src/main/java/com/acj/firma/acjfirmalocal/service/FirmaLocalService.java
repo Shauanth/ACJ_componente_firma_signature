@@ -1,7 +1,7 @@
 package com.acj.firma.acjfirmalocal.service;
 
 import com.acj.acjfirmalib.controller.FirmaController;
-import com.acj.acjfirmalib.model.parametersign.Parametros;
+import com.acj.acjfirmalib.util.Parametros;
 import com.acj.firma.acjfirmalocal.model.RequestFirma;
 import com.acj.firma.acjfirmalocal.model.ResponseFirma;
 
@@ -140,7 +140,6 @@ public class FirmaLocalService {
                 System.out.println("Alias certificado: " + request.getAliasCertificado());
 
                 parametros.setVisibleFirma(isVisible);
-                parametros.setSignType(request.getSignType());
                 parametros.setExtras(request.getExtras());
 
                 parametros.setRutaImagen(rutaImagenTemp);
