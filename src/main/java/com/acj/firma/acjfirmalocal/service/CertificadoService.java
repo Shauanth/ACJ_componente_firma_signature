@@ -102,8 +102,10 @@ public class CertificadoService {
 
                     String advertencia = "El certificado \"" + primero.cn + "\" no se puede usar: hay " + grupo.size()
                             + " certificados con esa misma identidad en tu almacén de Windows (" + detalleVigencias
-                            + "). Abre el Administrador de certificados de Windows (certmgr.msc → Personal → "
-                            + "Certificados), busca ese nombre y elimina el que dice VENCIDO para poder firmar.";
+                            + "). El vencido suele quedar OCULTO por Windows (se archiva al renovarse). Para verlo: "
+                            + "abre certmgr.msc → Personal → Certificados, y en el menú Ver → Opciones marca la "
+                            + "casilla \"Certificados archivados\"; ese certificado aparecerá y podrás eliminarlo "
+                            + "para poder firmar.";
 
                     System.err.println("[CertificadoService] - " + advertencia);
                     advertencias.add(advertencia);
