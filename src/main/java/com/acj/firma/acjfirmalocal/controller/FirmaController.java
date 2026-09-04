@@ -937,6 +937,27 @@ public class FirmaController implements Initializable {
         }
     }
 
+    /**
+     * SEGURIDAD: baseUrlBackend/baseUrlDocument llegan sin autenticación
+     * desde el servidor HTTP local (cualquier proceso/página del mismo
+     * equipo puede invocar acjfirma://), y de ahí terminan siendo la URL a la
+     * que se manda el documento firmado junto con el token de auth (ver
+     * enviarABackendSignature/procesarConServicioSignature). Si el valor
+     * recibido no coincide con un origen ya configurado localmente en
+     * ConfigService para esta instalación, se descarta (null) y el llamador
+     * cae al backend configurado en esta máquina en vez de a uno arbitrario.
+     */
+    private String validarUrlBackendConfiable(String url, String nombreParametro) {
+        if (url == null) {
+            return null;
+        }
+        if (ConfigService.esOrigenConfiable(url)) {
+            return url;
+        }
+        System.err.println("Se ignoró " + nombreParametro + " porque su origen no es confiable: " + url);
+        return null;
+    }
+
     public void procesarDocumentosDesdeWeb(String documentosJson, String idDocumento, String token,
                                            String datosBackendJson, String baseUrlBackend,
                                            String origen, String baseUrlDocument) {
@@ -957,9 +978,9 @@ public class FirmaController implements Initializable {
                 this.idDocumentoActual = idDocumento;
                 this.tokenAuth = token;
                 this.datosBackendJson = datosBackendJson;
-                this.baseUrlBackend = baseUrlBackend;
+                this.baseUrlBackend = validarUrlBackendConfiable(baseUrlBackend, "baseUrlBackend");
                 this.origenActual = origen;
-                this.baseUrlDocument = baseUrlDocument;
+                this.baseUrlDocument = validarUrlBackendConfiable(baseUrlDocument, "baseUrlDocument");
 
                 System.out.println("=== PROCESANDO DOCUMENTOS ===");
                 System.out.println("Origen: " + origen);
