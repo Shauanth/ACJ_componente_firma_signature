@@ -16,9 +16,11 @@ public class ConfigService {
 
     private static final String KEY_S3_BACKEND_URL = "s3.backend.url";
     private static final String KEY_SIGNATURE_BACKEND_URL = "signature.backend.url";
+    private static final String KEY_DOCUMENT_BACKEND_URL = "document.backend.url";
 
     private static final String DEFAULT_S3_BACKEND_URL = "http://localhost:8093/v1";
     private static final String DEFAULT_SIGNATURE_BACKEND_URL = "http://localhost:8093/v1/postfirma";
+    private static final String DEFAULT_DOCUMENT_BACKEND_URL = "http://localhost:8093/ach-signature/v1/document";
 
     private static final Properties properties = new Properties();
     private static boolean cargado = false;
@@ -34,6 +36,11 @@ public class ConfigService {
     public static synchronized String getSignatureBackendUrl() {
         cargarSiHaceFalta();
         return properties.getProperty(KEY_SIGNATURE_BACKEND_URL, DEFAULT_SIGNATURE_BACKEND_URL);
+    }
+
+    public static synchronized String getDocumentBackendUrl() {
+        cargarSiHaceFalta();
+        return properties.getProperty(KEY_DOCUMENT_BACKEND_URL, DEFAULT_DOCUMENT_BACKEND_URL);
     }
 
     private static File getConfigFile() {
@@ -64,6 +71,7 @@ public class ConfigService {
 
         properties.setProperty(KEY_S3_BACKEND_URL, DEFAULT_S3_BACKEND_URL);
         properties.setProperty(KEY_SIGNATURE_BACKEND_URL, DEFAULT_SIGNATURE_BACKEND_URL);
+        properties.setProperty(KEY_DOCUMENT_BACKEND_URL, DEFAULT_DOCUMENT_BACKEND_URL);
 
         crearArchivoConDefaults(configFile);
     }

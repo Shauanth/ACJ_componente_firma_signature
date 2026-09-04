@@ -146,6 +146,131 @@ public class HttpService {
         }
     }
 
+    /**
+     * Variante de obtenerDocumentos() para el flujo de "firma por enlace"
+     * (invitado anonimo, sin JWT de usuario): trae el documento directamente
+     * del endpoint publico /document/shared/{tokenCompartido}, que ya
+     * devuelve el PDF en base64 junto con el id del documento y un token
+     * corto (tokenTemp) para las llamadas posteriores.
+     */
+    public String[] obtenerDocumentoCompartido(String tokenCompartido) {
+        try {
+            logger.log(Level.INFO, "Obteniendo documento compartido, token: " + tokenCompartido);
+
+            String url = baseUrl + "/shared/" + tokenCompartido;
+            System.out.println("HTTP: URL completa: " + url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+
+            System.out.println("HTTP: Enviando petición...");
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("HTTP: Respuesta recibida - Status: " + response.statusCode());
+
+            if (response.statusCode() != 200) {
+                String error = "Error HTTP " + response.statusCode() + ": " + response.body();
+                logger.log(Level.SEVERE, error);
+                throw new RuntimeException(error);
+            }
+
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(response.body());
+
+            if (!root.path("meta").path("resultado").asBoolean()) {
+                throw new RuntimeException("Error en API: " + root.path("meta").path("mensaje").path("mensaje").asText());
+            }
+
+            JsonNode datos = root.path("datos");
+            if (!datos.isArray() || datos.size() == 0) {
+                throw new RuntimeException("No se encontró el documento compartido");
+            }
+
+            JsonNode docNode = datos.get(0);
+
+            String documentoJsonLocal = "{\"documentos\":[{"
+                    + "\"id\":\"" + docNode.path("id").asText() + "\","
+                    + "\"nombre\":\"" + docNode.path("key").asText() + "\","
+                    + "\"contenido\":\"" + docNode.path("documento").asText() + "\","
+                    + "\"tipo\":\"PDF\""
+                    + "}]}";
+
+            return new String[]{documentoJsonLocal, docNode.path("id").asText(), docNode.path("token").asText()};
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error obteniendo documento compartido", e);
+            System.err.println("Error en obtenerDocumentoCompartido: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Error al obtener documento compartido: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Variante de procesarFirmaSignature() para el flujo de firma por
+     * enlace: en vez de Authorization con el JWT del usuario, autentica con
+     * el header tokenTemp (el token corto emitido por /document/shared/{token})
+     * contra el endpoint publico /process-shared.
+     */
+    public String procesarFirmaCompartida(Long idDocumento, String documentoFirmadoBase64,
+                                          String bucket, String usuarioModificacion,
+                                          String nombreDocumento, Integer tamanoDocumento,
+                                          String codigoGenerado, String tokenTemp) {
+        try {
+            System.out.println("Procesando firma compartida (enlace)");
+            System.out.println("   - ID Documento: " + idDocumento);
+            System.out.println("   - Código: " + codigoGenerado);
+
+            String url = baseUrl + "/process-shared";
+
+            ObjectMapper bodyMapper = new ObjectMapper();
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("idDocumento", idDocumento);
+            body.put("documentoFirmadoBase64", documentoFirmadoBase64);
+            body.put("bucket", bucket);
+            body.put("usuarioModificacion", usuarioModificacion);
+            body.put("nombreDocumento", nombreDocumento);
+            body.put("tamanoDocumento", tamanoDocumento);
+            body.put("codigoGenerado", codigoGenerado);
+            String jsonBody = bodyMapper.writeValueAsString(body);
+
+            System.out.println("Enviando a: " + url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(60))
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("codigoCanal", "APP-FIRMA")
+                    .header("codigoFuncionalidad", "FIRMA-WEB")
+                    .header("tokenTemp", tokenTemp)
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            System.out.println("Enviando petición al servicio signature (compartido)...");
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Respuesta recibida - Status: " + response.statusCode());
+
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                System.out.println("Documento procesado exitosamente en signature (compartido)");
+                return response.body();
+            } else {
+                String errorMsg = "Error HTTP " + response.statusCode() + ": " + response.body();
+                System.err.println("Error: " + errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+
+        } catch (Exception e) {
+            System.err.println("Error enviando documento a signature (compartido): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Error al procesar firma compartida: " + e.getMessage(), e);
+        }
+    }
+
     public String procesarFirmaSignature(Long idDocumento, String documentoFirmadoBase64,
                                          String bucket, String usuarioModificacion,
                                          String nombreDocumento, Integer tamanoDocumento,
@@ -184,9 +309,9 @@ public class HttpService {
 
             if (authToken != null && !authToken.isEmpty()) {
                 requestBuilder.header("Authorization", authToken);
-                System.out.println("Token de autorización agregado");
-                System.out.println("Token agregado SIN prefijo Bearer");
-                System.out.println("Token enviado: " + authToken.substring(0, Math.min(50, authToken.length())) + "...");
+                // SEGURIDAD: no loguear fragmentos del token - los logs persisten
+                // indefinidamente en disco (ver LogService).
+                System.out.println("Token de autorización agregado (SIN prefijo Bearer, longitud " + authToken.length() + ")");
             }
 
             HttpRequest request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
