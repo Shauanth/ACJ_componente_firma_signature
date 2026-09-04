@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.BindException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -53,7 +54,16 @@ public class LocalHttpServer {
     public boolean iniciar() {
         for (int puerto : PUERTOS_INTENTAR) {
             try {
-                server = HttpServer.create(new InetSocketAddress(puerto), 0);
+                // SEGURIDAD: new InetSocketAddress(puerto) (sin dirección) hace
+                // bind en el wildcard address (0.0.0.0), es decir en TODAS las
+                // interfaces de red, no solo loopback - cualquier equipo en la
+                // misma LAN (o en internet, si el firewall/NAT no lo bloquea)
+                // podría hablarle a este servidor sin autenticación y pedirle
+                // que firme documentos y los reenvíe a una baseUrlBackend
+                // arbitraria (ver handleInvocar). Se fuerza explícitamente
+                // loopback: este servidor solo lo debe usar la web abierta en
+                // el propio equipo del usuario.
+                server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), puerto), 0);
                 puertoActual = puerto;
 
                 server.createContext("/firma/status", this::handleStatus);

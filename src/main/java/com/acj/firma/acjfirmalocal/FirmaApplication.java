@@ -1,5 +1,6 @@
 package com.acj.firma.acjfirmalocal;
 
+import com.acj.firma.acjfirmalocal.service.LogService;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
@@ -7,12 +8,9 @@ import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.stage.Stage;
 
-import javax.net.ssl.*;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLDecoder;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,6 +25,7 @@ public class FirmaApplication extends Application {
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(FirmaApplication.class.getResource("firma-main.fxml"));
         Scene scene = new Scene(fxmlLoader.load(), 1000, 700);
+        scene.getStylesheets().add(FirmaApplication.class.getResource("theme.css").toExternalForm());
 
         controllerRef = fxmlLoader.getController();
         primaryStageRef = stage;
@@ -135,10 +134,12 @@ public class FirmaApplication extends Application {
                     if (tokenCodificado != null) {
                         try {
                             token = URLDecoder.decode(tokenCodificado, "UTF-8");
-                            System.out.println("Token decodificado exitosamente:");
-                            System.out.println("   - Longitud original: " + tokenCodificado.length());
-                            System.out.println("   - Longitud decodificada: " + token.length());
-                            System.out.println("   - Primeros 50 chars: " + token.substring(0, Math.min(50, token.length())));
+                            // SEGURIDAD: no loguear ni siquiera un prefijo del token - los
+                            // logs ahora persisten indefinidamente en disco (ver LogService),
+                            // así que un fragmento del token de auth ya es una fuga de
+                            // credenciales. Solo se deja la longitud para depurar truncados.
+                            System.out.println("Token decodificado exitosamente (longitud original: "
+                                    + tokenCodificado.length() + ", decodificada: " + token.length() + ")");
                         } catch (Exception e) {
                             System.err.println("Error decodificando token: " + e.getMessage());
                             token = tokenCodificado;
@@ -147,6 +148,8 @@ public class FirmaApplication extends Application {
 
                     String datosBackendJson = params.get("datosBackend");
                     String baseUrlBackend = params.get("baseUrlBackend");
+                    String origen = params.get("origen");
+                    String baseUrlDocument = params.get("baseUrlDocument");
 
                     System.out.println("PARÁMETROS RECIBIDOS:");
                     System.out.println("   - Documentos JSON: " + (documentosJson != null ? "Presente (" + documentosJson.length() + " chars)" : "Ausente"));
@@ -168,7 +171,9 @@ public class FirmaApplication extends Application {
                                             idDocumento,
                                             finalToken,
                                             datosBackendJson,
-                                            baseUrlBackend
+                                            baseUrlBackend,
+                                            origen,
+                                            baseUrlDocument
                                     );
 
                                     System.out.println("Datos enviados al controlador exitosamente");
@@ -211,49 +216,37 @@ public class FirmaApplication extends Application {
     }
 
     public static void main(String[] args) {
+        LogService.iniciar();
+
         modoServicio = args.length > 0 && "--service".equals(args[0]);
         applicationArgs = modoServicio ? new String[0] : args;
 
         System.setProperty("prism.lcdtext", "false");
         System.setProperty("prism.text", "t2k");
 
-        configurarSSLPermisivo();
+        // SEGURIDAD: antes acá se llamaba a configurarSSLPermisivo(), que
+        // instalaba un TrustManager que acepta CUALQUIER certificado y un
+        // HostnameVerifier que aprueba CUALQUIER hostname como los defaults
+        // de HttpsURLConnection para TODA la JVM (ver historial de este
+        // archivo). Eso deshabilitaba la validación de certificados TLS para
+        // cualquier llamada HTTPS hecha por este proceso durante toda su vida
+        // - incluyendo, de rebote, cualquier llamada HTTPS que hicieran
+        // librerías de terceros vía HttpsURLConnection (p.ej. la verificación
+        // de TSL contra https://iofe.indecopi.gob.pe en acj-libreria-firma) -
+        // un daemon con el certificado de firma del usuario y un token de
+        // sesión en memoria quedaba así expuesto a un man-in-the-middle en
+        // cualquiera de esas llamadas. No había ningún comentario ni ticket
+        // que explique por qué se agregó (estaba desde el commit inicial del
+        // repo) y las llamadas propias del agente al backend (HttpService)
+        // NO la necesitan: usan java.net.http.HttpClient con su propio
+        // SSLContext explícito (cacerts del sistema + certificados/acjdigital.crt
+        // embebido, ver HttpService.configurarCertificadoSSL), que nunca
+        // dependió de este default global. Si en algún ambiente hace falta
+        // confiar en una CA interna/autofirmada para alguna llamada HTTPS
+        // puntual, la forma correcta es armar un truststore específico para
+        // esa llamada (como ya hace HttpService), nunca deshabilitar la
+        // validación para todo el proceso.
 
         launch(args);
-    }
-
-    private static void configurarSSLPermisivo() {
-        try {
-            System.out.println("Configurando SSL en modo permisivo...");
-
-            TrustManager[] trustAllCerts = new TrustManager[] {
-                    new X509TrustManager() {
-                        public X509Certificate[] getAcceptedIssuers() {
-                            return new X509Certificate[0];
-                        }
-                        public void checkClientTrusted(X509Certificate[] certs, String authType) {
-                        }
-                        public void checkServerTrusted(X509Certificate[] certs, String authType) {
-                        }
-                    }
-            };
-
-            SSLContext sc = SSLContext.getInstance("TLS");
-            sc.init(null, trustAllCerts, new SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-
-            HostnameVerifier allHostsValid = new HostnameVerifier() {
-                public boolean verify(String hostname, SSLSession session) {
-                    return true;
-                }
-            };
-            HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
-
-            System.out.println("SSL configurado exitosamente");
-
-        } catch (Exception e) {
-            System.err.println("Error configurando SSL: " + e.getMessage());
-            e.printStackTrace();
-        }
     }
 }

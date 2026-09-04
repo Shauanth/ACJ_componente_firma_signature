@@ -1,0 +1,111 @@
+/*
+ * Tema visual del Agente de Firma, alineado a la paleta de acj-frt-signature
+ * (azul de marca #026c94 / acento claro #6dd2e6 sobre fondo claro).
+ */
+
+.root {
+    -fx-font-family: "Segoe UI", "System";
+}
+
+.app-header {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e5e7eb;
+    -fx-border-width: 0 0 1 0;
+}
+
+.app-title {
+    -fx-text-fill: #1f2937;
+}
+
+.app-version {
+    -fx-text-fill: #9ca3af;
+}
+
+.card {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(2, 108, 148, 0.10), 8, 0, 0, 1);
+}
+
+.section-title {
+    -fx-font-weight: 700;
+    -fx-font-size: 16px;
+    -fx-text-fill: #1f2937;
+}
+
+.btn-primary-acj {
+    -fx-background-color: #026c94;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 8;
+    -fx-font-weight: 700;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+}
+.btn-primary-acj:hover {
+    -fx-background-color: #01526f;
+}
+.btn-primary-acj:armed {
+    -fx-background-color: #013e54;
+}
+.btn-primary-acj:disabled {
+    -fx-opacity: 0.5;
+    -fx-cursor: default;
+}
+
+.btn-secondary-acj {
+    -fx-background-color: #eef8fb;
+    -fx-text-fill: #026c94;
+    -fx-background-radius: 8;
+    -fx-border-color: #6dd2e6;
+    -fx-border-width: 1;
+    -fx-border-radius: 8;
+    -fx-font-weight: 600;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+.btn-secondary-acj:hover {
+    -fx-background-color: #dff2f7;
+}
+.btn-secondary-acj:disabled {
+    -fx-opacity: 0.5;
+    -fx-cursor: default;
+}
+
+.btn-outline-acj {
+    -fx-background-color: transparent;
+    -fx-text-fill: #6b7280;
+    -fx-background-radius: 6;
+    -fx-border-color: #d1d5db;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-font-size: 11px;
+    -fx-cursor: hand;
+}
+.btn-outline-acj:hover {
+    -fx-background-color: #f3f4f6;
+}
+
+.logs-info-label {
+    -fx-font-size: 11px;
+    -fx-text-fill: #6b7280;
+}
+
+.logs-path-value {
+    -fx-font-size: 11px;
+    -fx-text-fill: #026c94;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+}
+
+.cert-search-field {
+    -fx-background-color: #f9fafb;
+    -fx-background-radius: 8;
+    -fx-border-color: #e5e7eb;
+    -fx-border-width: 1;
+    -fx-border-radius: 8;
+    -fx-font-size: 13px;
+    -fx-padding: 8 12;
+}
+.cert-search-field:focused {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #026c94;
+}

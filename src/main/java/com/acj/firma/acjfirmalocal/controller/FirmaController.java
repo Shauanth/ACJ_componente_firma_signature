@@ -11,6 +11,7 @@ import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.application.Platform;
@@ -19,9 +20,11 @@ import org.controlsfx.control.Notifications;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
+import java.awt.Desktop;
 import java.io.File;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public class FirmaController implements Initializable {
@@ -32,16 +35,17 @@ public class FirmaController implements Initializable {
     @FXML private Button btnSign;
     @FXML private Button btnRefreshCerts;
     @FXML private ComboBox<String> cbCertificates;
+    @FXML private TextField txtBuscarCertificado;
     @FXML private VBox certificatesList;
     @FXML private WebView webPreview;
     @FXML private ProgressBar progressBar;
     @FXML private TabPane tabDocuments;
-    @FXML private TextArea logArea;
     @FXML private Button btnCancel;
     @FXML private Label lblDocumentCount;
     @FXML private HBox hboxDocumentStatus;
     @FXML private Label lblDocumentStatus;
     @FXML private ImageView logoImage;
+    @FXML private Label lblLogsPath;
 
     private CertificadoService certificadoService;
     private DocumentoService documentoService;
@@ -55,13 +59,63 @@ public class FirmaController implements Initializable {
     private String tokenAuth;
 
     private boolean documentosRecibidosDesdeWeb = false;
-    private boolean procesoFirmaEnCurso = false;
+
+    // AtomicBoolean en vez de un boolean plano: esta bandera se lee desde el
+    // hilo de fondo que hace la firma (procesarFirmaDocumentoUnico) y se
+    // escribe desde el hilo de JavaFX (onSignDocuments, onCancelar,
+    // procesarDocumentosDesdeWeb) - un boolean normal no garantiza que un
+    // hilo vea la escritura del otro. Además sirve como punto único para
+    // rechazar una nueva invocación mientras ya hay una firma en curso (ver
+    // procesarDocumentosDesdeWeb): antes, una segunda invocación superpuesta
+    // (doble click en "Firmar" en la web, o dos pestañas firmando casi al
+    // mismo tiempo) pisaba documentosParaFirmar/configuracionFirma/tokenAuth
+    // mientras el hilo de firma anterior todavía los estaba leyendo, lo que
+    // producía fallas "aleatorias" (documento equivocado, IndexOutOfBounds,
+    // token/URL de otro documento, etc.).
+    private final AtomicBoolean procesoFirmaEnCurso = new AtomicBoolean(false);
 
     private String datosBackendJson;
     private String baseUrlBackend;
+    private String origenActual;
+    private String baseUrlDocument;
+    private String tokenTempCompartido;
 
     private String certificadoSeleccionado = null;
     private List<VBox> certificateCards = new ArrayList<>();
+
+    /**
+     * Snapshot inmutable de todo lo que necesita una firma en curso, tomado
+     * en el hilo de JavaFX justo antes de lanzar el hilo de fondo (ver
+     * procesarFirmaDocumentoUnico). El hilo de fondo lee siempre de acá, no
+     * de los campos de instancia de arriba, para no verse afectado si una
+     * nueva invocación llega y reasigna esos campos mientras esta firma
+     * todavía está en proceso.
+     */
+    private static final class SesionFirma {
+        final List<DocumentoFirma> documentos;
+        final ConfiguracionFirma configuracion;
+        final String idDocumento;
+        final String tokenAuth;
+        final String baseUrlBackend;
+        final String origen;
+        final String baseUrlDocument;
+        final String tokenTempCompartido;
+        final String datosBackendJson;
+
+        SesionFirma(List<DocumentoFirma> documentos, ConfiguracionFirma configuracion, String idDocumento,
+                    String tokenAuth, String baseUrlBackend, String origen, String baseUrlDocument,
+                    String tokenTempCompartido, String datosBackendJson) {
+            this.documentos = documentos;
+            this.configuracion = configuracion;
+            this.idDocumento = idDocumento;
+            this.tokenAuth = tokenAuth;
+            this.baseUrlBackend = baseUrlBackend;
+            this.origen = origen;
+            this.baseUrlDocument = baseUrlDocument;
+            this.tokenTempCompartido = tokenTempCompartido;
+            this.datosBackendJson = datosBackendJson;
+        }
+    }
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -69,15 +123,32 @@ public class FirmaController implements Initializable {
         documentoService = new DocumentoService();
         firmaLocalService = new FirmaLocalService();
 
-//        Image logo = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/LOGO_BLANCO.png")));
-//        logoImage.setImage(logo);
+        try {
+            javafx.scene.image.Image logo = new javafx.scene.image.Image(
+                    Objects.requireNonNull(getClass().getResourceAsStream("/images/logo-acj-black.png")));
+            logoImage.setImage(logo);
+        } catch (Exception e) {
+            System.err.println("No se pudo cargar el logo: " + e.getMessage());
+        }
 
         setupUI();
         cargarCertificados();
         configurarEstadoInicial();
         actualizarEstado("Aplicación lista para recibir documentos desde la web");
-        setupSimpleLogArea();
+        mostrarRutaCarpetaLogs();
         iniciarServidorLocal();
+    }
+
+    /**
+     * El registro de actividad ya no se muestra en la ventana (ver
+     * LogService): acá solo se le informa al usuario dónde quedó guardado el
+     * archivo, para que pueda abrirlo o borrarlo si lo necesita.
+     */
+    private void mostrarRutaCarpetaLogs() {
+        if (lblLogsPath != null) {
+            File carpeta = LogService.getCarpetaLogs();
+            lblLogsPath.setText(carpeta != null ? carpeta.getAbsolutePath() : "No disponible");
+        }
     }
 
     private void iniciarServidorLocal() {
@@ -146,113 +217,141 @@ public class FirmaController implements Initializable {
         });
     }
 
-    private void setupSimpleLogArea() {
-        if (logArea != null) {
-            logArea.setEditable(false);
-            logArea.setWrapText(true);
-            logArea.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 11px;");
-
-            java.io.OutputStream logOutputStream = new java.io.OutputStream() {
-                private final java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-
-                @Override
-                public synchronized void write(int b) {
-                    if (b == '\n') {
-                        String linea = buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
-                        buffer.reset();
-                        Platform.runLater(() -> {
-                            logArea.appendText(linea + "\n");
-                            // Auto-scroll
-                            logArea.setScrollTop(Double.MAX_VALUE);
-                        });
-                    } else {
-                        buffer.write(b);
-                    }
-                }
-            };
-
-            // autoFlush + UTF-8 explícito: sin esto, tildes/ñ (Perú, página, código...)
-            // se corrompían porque el OutputStream anterior casteaba cada byte a char
-            // por separado, rompiendo los caracteres multibyte de UTF-8.
-            java.io.PrintStream logPrintStream = new java.io.PrintStream(logOutputStream, true, java.nio.charset.StandardCharsets.UTF_8);
-
-            // Antes solo se interceptaba System.out: todos los System.err.println(...)
-            // y e.printStackTrace() (la gran mayoría de los logs de error de esta
-            // clase) se perdían y nunca llegaban al panel "Registro de Actividad".
-            System.setOut(logPrintStream);
-            System.setErr(logPrintStream);
-        }
-    }
-
     private void setupUI() {
 //        btnRefreshCerts.setGraphic(new FontIcon(FontAwesomeSolid.SYNC_ALT));
         btnSign.setGraphic(new FontIcon(FontAwesomeSolid.FILE_SIGNATURE));
 
-        lblAppTitle.setText("ACJ Signature Agente");
         btnSign.setDisable(true);
+        configurarBusquedaCertificados();
 //        progressBar.setVisible(false);
     }
 
+    /**
+     * PERFORMANCE: el escaneo del almacén de certificados de Windows
+     * (CertificadoService.obtenerCertificados(), que abre el KeyStore
+     * "Windows-MY" e itera/parsea cada alias) es una operación de I/O que
+     * puede tardar un momento perceptible con varios certificados instalados.
+     * Antes se ejecutaba entera dentro de un Platform.runLater(), es decir en
+     * el hilo de la aplicación JavaFX: mientras duraba el escaneo la ventana
+     * quedaba completamente congelada (ni repintaba ni respondía clicks), al
+     * arrancar y cada vez que el usuario tocaba "Actualizar". Acá se separa
+     * en dos partes: el fetch de datos (certificadoService.*) corre en un
+     * hilo de fondo, y solo la construcción de las tarjetas/UI - ya rápida -
+     * vuelve al hilo de JavaFX vía Platform.runLater.
+     */
     private void cargarCertificados() {
         Platform.runLater(() -> {
+            certificatesList.getChildren().clear();
+            certificateCards.clear();
+            certificadoSeleccionado = null;
+
+            Label loadingLabel = new Label("Cargando certificados...");
+            loadingLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #6b7280; -fx-padding: 20;");
+            certificatesList.getChildren().add(loadingLabel);
+        });
+
+        new Thread(() -> {
             try {
-                certificatesList.getChildren().clear();
-                certificateCards.clear();
-                certificadoSeleccionado = null;
-
-                Label loadingLabel = new Label("Cargando certificados...");
-                loadingLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #6b7280; -fx-padding: 20;");
-                certificatesList.getChildren().add(loadingLabel);
-
                 if (!certificadoService.isServicioDisponible()) {
-                    certificatesList.getChildren().clear();
-                    Label errorLabel = new Label("Servicio de certificados no disponible");
-                    errorLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #dc2626; -fx-padding: 20;");
-                    certificatesList.getChildren().add(errorLabel);
-                    actualizarEstado("Error: Servicio de certificados no disponible");
+                    Platform.runLater(() -> {
+                        certificatesList.getChildren().clear();
+                        Label errorLabel = new Label("Servicio de certificados no disponible");
+                        errorLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #dc2626; -fx-padding: 20;");
+                        certificatesList.getChildren().add(errorLabel);
+                        actualizarEstado("Error: Servicio de certificados no disponible");
+                    });
                     return;
                 }
 
-                certificadosDisponibles = certificadoService.obtenerCertificados();
-                System.out.println("Certificados obtenidos: " + certificadosDisponibles);
-                System.out.println("Cantidad: " + certificadosDisponibles.size());
+                List<String> certificados = certificadoService.obtenerCertificados();
+                List<String> advertencias = certificadoService.obtenerAdvertencias();
+                System.out.println("Certificados obtenidos: " + certificados);
+                System.out.println("Cantidad: " + certificados.size());
 
-                // El log de consola no llega al usuario final en el instalador
-                // empaquetado: si CertificadoService ocultó algún certificado
-                // ambiguo (misma identidad duplicada en el almacén, uno
-                // vencido), hay que decírselo en la propia ventana para que
-                // sepa qué certificado borrar en certmgr.msc.
-                for (String advertencia : certificadoService.obtenerAdvertencias()) {
-                    mostrarAlerta("Certificado no disponible", advertencia);
-                }
+                Platform.runLater(() -> {
+                    certificadosDisponibles = certificados;
 
-                certificatesList.getChildren().clear();
-
-                if (certificadosDisponibles.isEmpty()) {
-                    VBox emptyState = createEmptyStateCard();
-                    certificatesList.getChildren().add(emptyState);
-                    actualizarEstado("No se encontraron certificados en el sistema");
-                    mostrarNotificacion("Sin certificados", "No se encontraron certificados digitales en el sistema", false);
-                } else {
-                    for (String certificado : certificadosDisponibles) {
-                        VBox certificateCard = createCertificateCard(certificado);
-                        certificateCards.add(certificateCard);
-                        certificatesList.getChildren().add(certificateCard);
+                    // El log de consola no llega al usuario final en el instalador
+                    // empaquetado: si CertificadoService ocultó algún certificado
+                    // ambiguo (misma identidad duplicada en el almacén, uno
+                    // vencido), hay que decírselo en la propia ventana para que
+                    // sepa qué certificado borrar en certmgr.msc.
+                    for (String advertencia : advertencias) {
+                        mostrarAlerta("Certificado no disponible", advertencia);
                     }
 
-                    actualizarEstado("Certificados cargados: " + certificadosDisponibles.size());
-                    mostrarNotificacion("Certificados cargados", "Se encontraron " + certificadosDisponibles.size() + " certificados", true);
-                }
+                    certificatesList.getChildren().clear();
+
+                    if (certificadosDisponibles.isEmpty()) {
+                        VBox emptyState = createEmptyStateCard();
+                        certificatesList.getChildren().add(emptyState);
+                        actualizarEstado("No se encontraron certificados en el sistema");
+                        mostrarNotificacion("Sin certificados", "No se encontraron certificados digitales en el sistema", false);
+                    } else {
+                        // Grilla de 2 columnas: se agrupan las tarjetas de a pares
+                        // dentro de una fila (HBox) para que ambas repartan el
+                        // ancho disponible en partes iguales.
+                        for (int i = 0; i < certificadosDisponibles.size(); i += 2) {
+                            HBox fila = new HBox(10.0);
+
+                            VBox card1 = createCertificateCard(certificadosDisponibles.get(i));
+                            certificateCards.add(card1);
+                            HBox.setHgrow(card1, Priority.ALWAYS);
+                            card1.setMaxWidth(Double.MAX_VALUE);
+                            fila.getChildren().add(card1);
+
+                            if (i + 1 < certificadosDisponibles.size()) {
+                                VBox card2 = createCertificateCard(certificadosDisponibles.get(i + 1));
+                                certificateCards.add(card2);
+                                HBox.setHgrow(card2, Priority.ALWAYS);
+                                card2.setMaxWidth(Double.MAX_VALUE);
+                                fila.getChildren().add(card2);
+                            }
+
+                            certificatesList.getChildren().add(fila);
+                        }
+
+                        actualizarEstado("Certificados cargados: " + certificadosDisponibles.size());
+                        mostrarNotificacion("Certificados cargados", "Se encontraron " + certificadosDisponibles.size() + " certificados", true);
+                    }
+                });
 
             } catch (Exception e) {
-                certificatesList.getChildren().clear();
-                VBox errorCard = createErrorStateCard(e.getMessage());
-                certificatesList.getChildren().add(errorCard);
-                actualizarEstado("Error al cargar certificados: " + e.getMessage());
-                mostrarNotificacion("Error", "Error al cargar certificados: " + e.getMessage(), false);
                 e.printStackTrace();
+                Platform.runLater(() -> {
+                    certificatesList.getChildren().clear();
+                    VBox errorCard = createErrorStateCard(e.getMessage());
+                    certificatesList.getChildren().add(errorCard);
+                    actualizarEstado("Error al cargar certificados: " + e.getMessage());
+                    mostrarNotificacion("Error", "Error al cargar certificados: " + e.getMessage(), false);
+                });
             }
-        });
+        }, "cert-loader").start();
+    }
+
+    private void configurarBusquedaCertificados() {
+        if (txtBuscarCertificado != null) {
+            txtBuscarCertificado.textProperty().addListener((obs, valorAnterior, valorNuevo) -> filtrarCertificados(valorNuevo));
+        }
+    }
+
+    /**
+     * Oculta (sin descartar) las tarjetas cuyo texto no coincida con el
+     * filtro: certificateCards y certificadosDisponibles se llenan siempre
+     * en el mismo orden dentro de cargarCertificados(), así que comparten
+     * índice.
+     */
+    private void filtrarCertificados(String filtro) {
+        if (certificadosDisponibles == null) {
+            return;
+        }
+        String filtroNormalizado = filtro == null ? "" : filtro.trim().toLowerCase();
+        for (int i = 0; i < certificateCards.size() && i < certificadosDisponibles.size(); i++) {
+            boolean coincide = filtroNormalizado.isEmpty()
+                    || certificadosDisponibles.get(i).toLowerCase().contains(filtroNormalizado);
+            certificateCards.get(i).setVisible(coincide);
+            certificateCards.get(i).setManaged(coincide);
+        }
     }
 
     private VBox createCertificateCard(String certificado) {
@@ -297,7 +396,7 @@ public class FirmaController implements Initializable {
         });
 
         card.setOnMouseEntered(event -> {
-            if (!card.getStyle().contains("-fx-border-color: #3b82f6")) {
+            if (!card.getStyle().contains("-fx-border-color: #026c94")) {
                 card.setStyle(card.getStyle().replace(
                         "-fx-background-color: #f9fafb;",
                         "-fx-background-color: #f3f4f6;"
@@ -331,14 +430,14 @@ public class FirmaController implements Initializable {
         }
 
         selectedCard.setStyle(
-                "-fx-background-color: #eff6ff; " +
-                        "-fx-border-color: #3b82f6; " +
+                "-fx-background-color: #eef8fb; " +
+                        "-fx-border-color: #026c94; " +
                         "-fx-border-width: 2; " +
                         "-fx-border-radius: 8; " +
                         "-fx-background-radius: 8; " +
                         "-fx-padding: 15; " +
                         "-fx-cursor: hand; " +
-                        "-fx-effect: dropshadow(gaussian, rgba(59,130,246,0.3), 4, 0, 0, 2);"
+                        "-fx-effect: dropshadow(gaussian, rgba(2,108,148,0.3), 4, 0, 0, 2);"
         );
 
         certificadoSeleccionado = certificado;
@@ -423,7 +522,7 @@ public class FirmaController implements Initializable {
     private void onCancelar() {
         System.out.println("Botón cancelar presionado");
 
-        if (procesoFirmaEnCurso) {
+        if (procesoFirmaEnCurso.get()) {
             Platform.runLater(() -> {
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
                 alert.setTitle("Cancelar Firma");
@@ -460,7 +559,7 @@ public class FirmaController implements Initializable {
     }
 
     private void cancelarProcesoFirma() {
-        procesoFirmaEnCurso = false;
+        procesoFirmaEnCurso.set(false);
 
         Platform.runLater(() -> {
             btnSign.setDisable(false);
@@ -508,6 +607,11 @@ public class FirmaController implements Initializable {
     private void onSignDocuments() {
         System.out.println("onSignDocuments() - INICIADO");
 
+        if (procesoFirmaEnCurso.get()) {
+            mostrarAlerta("Firma en curso", "Ya hay un proceso de firma en curso. Espere a que termine.");
+            return;
+        }
+
         if (!documentosRecibidosDesdeWeb) {
             mostrarAlerta("Error", "No se puede firmar sin documentos recibidos desde la web");
             return;
@@ -537,12 +641,22 @@ public class FirmaController implements Initializable {
     }
 
     private void procesarFirmaDocumentoUnico(String cnReal, String organizacion) {
-        procesoFirmaEnCurso = true;
+        procesoFirmaEnCurso.set(true);
         actualizarEstado("Iniciando proceso de firma...");
         btnSign.setDisable(true);
 
+        // Snapshot tomado acá, en el hilo de JavaFX, antes de arrancar el hilo
+        // de fondo: si mientras este hilo firma llega una nueva invocación
+        // desde la web, procesarDocumentosDesdeWeb la rechaza (ver más abajo)
+        // en vez de reasignar documentosParaFirmar/configuracionFirma/etc. por
+        // debajo de este hilo - pero aun si ese rechazo fallara, este hilo ya
+        // no depende de los campos de instancia para nada, así que no hay
+        // forma de que termine firmando con datos de otra sesión.
+        SesionFirma sesion = new SesionFirma(documentosParaFirmar, configuracionFirma, idDocumentoActual,
+                tokenAuth, baseUrlBackend, origenActual, baseUrlDocument, tokenTempCompartido, datosBackendJson);
+
         new Thread(() -> {
-            int totalDocumentos = documentosParaFirmar.size();
+            int totalDocumentos = sesion.documentos.size();
             List<String> errores = new ArrayList<>();
             int firmadosOk = 0;
 
@@ -551,12 +665,12 @@ public class FirmaController implements Initializable {
                 System.out.println("Tipo de servicio: SIGNATURE - documentos a firmar: " + totalDocumentos);
 
                 for (int i = 0; i < totalDocumentos; i++) {
-                    if (!procesoFirmaEnCurso) {
+                    if (!procesoFirmaEnCurso.get()) {
                         System.out.println("Proceso cancelado por el usuario");
                         return;
                     }
 
-                    DocumentoFirma doc = documentosParaFirmar.get(i);
+                    DocumentoFirma doc = sesion.documentos.get(i);
                     final int indice = i + 1;
 
                     try {
@@ -567,10 +681,10 @@ public class FirmaController implements Initializable {
                         RequestFirma request = new RequestFirma(doc.getContenidoBase64(), cnReal);
                         PosicionFirma pos = doc.getPosicionFirma();
 
-                        if (configuracionFirma != null) {
-                            request.setEmpresa(configuracionFirma.getEmpresa().isEmpty() ? organizacion : configuracionFirma.getEmpresa());
-                            request.setMotivo(configuracionFirma.getMotivo());
-                            request.setLocation(configuracionFirma.getUbicacion());
+                        if (sesion.configuracion != null) {
+                            request.setEmpresa(sesion.configuracion.getEmpresa().isEmpty() ? organizacion : sesion.configuracion.getEmpresa());
+                            request.setMotivo(sesion.configuracion.getMotivo());
+                            request.setLocation(sesion.configuracion.getUbicacion());
                         } else {
                             request.setEmpresa(organizacion);
                         }
@@ -579,21 +693,21 @@ public class FirmaController implements Initializable {
                             request.setPagina(pos.getPagina());
                             request.setX(pos.getX());
                             request.setY(pos.getY());
-                        } else if (configuracionFirma != null) {
-                            request.setPagina(configuracionFirma.getPagina());
-                            request.setX(configuracionFirma.getPosicionX());
-                            request.setY(configuracionFirma.getPosicionY());
+                        } else if (sesion.configuracion != null) {
+                            request.setPagina(sesion.configuracion.getPagina());
+                            request.setX(sesion.configuracion.getPosicionX());
+                            request.setY(sesion.configuracion.getPosicionY());
                         }
 
-                        if (configuracionFirma != null && configuracionFirma.getImagen() != null && !configuracionFirma.getImagen().isEmpty()) {
-                            request.setImage(configuracionFirma.getImagen());
+                        if (sesion.configuracion != null && sesion.configuracion.getImagen() != null && !sesion.configuracion.getImagen().isEmpty()) {
+                            request.setImage(sesion.configuracion.getImagen());
                         } else if (request.isVisibleFirma()) {
                             request.setImage(firmaLocalService.crearImagenFirmaBasica());
                         }
 
                         Object resultadoFirma = firmaLocalService.firmarDocumento(request);
 
-                        if (!procesoFirmaEnCurso) {
+                        if (!procesoFirmaEnCurso.get()) {
                             System.out.println("Proceso cancelado durante la firma");
                             return;
                         }
@@ -611,7 +725,7 @@ public class FirmaController implements Initializable {
 
                         System.out.println("Documento " + indice + "/" + totalDocumentos + " firmado localmente, enviando al backend...");
 
-                        enviarABackendSignature(doc, resultado.getDocumentoFirmado());
+                        enviarABackendSignature(doc, resultado.getDocumentoFirmado(), sesion);
                         firmadosOk++;
 
                     } catch (Exception eDoc) {
@@ -625,7 +739,7 @@ public class FirmaController implements Initializable {
                 final int totalOk = firmadosOk;
                 if (errores.isEmpty()) {
                     Platform.runLater(() -> {
-                        procesoFirmaEnCurso = false;
+                        procesoFirmaEnCurso.set(false);
                         String mensajeExito = totalDocumentos == 1
                                 ? "Documento firmado y procesado exitosamente con Servicio Signature"
                                 : totalOk + " documentos firmados y procesados exitosamente";
@@ -633,7 +747,7 @@ public class FirmaController implements Initializable {
                         actualizarEstado(mensajeExito);
                         btnSign.setDisable(false);
 
-                        notificarExitoAlFrontend();
+                        notificarExitoAlFrontend(sesion.idDocumento);
                         mostrarAlertaExito(mensajeExito);
 
                         FirmaApplication.ocultarVentana();
@@ -641,16 +755,16 @@ public class FirmaController implements Initializable {
                 } else {
                     String mensajeError = String.join(", ", errores);
                     Platform.runLater(() -> {
-                        procesoFirmaEnCurso = false;
+                        procesoFirmaEnCurso.set(false);
 
                         actualizarEstado("Error en la firma");
                         btnSign.setDisable(false);
                         mostrarAlertaErrorDetallado("Error al Firmar Documento", mensajeError);
 
                         if (totalOk > 0) {
-                            notificarExitoAlFrontend();
+                            notificarExitoAlFrontend(sesion.idDocumento);
                         } else {
-                            notificarErrorAlFrontend(mensajeError);
+                            notificarErrorAlFrontend(mensajeError, sesion.idDocumento);
                         }
 
                         FirmaApplication.ocultarVentana();
@@ -662,13 +776,13 @@ public class FirmaController implements Initializable {
                 e.printStackTrace();
 
                 Platform.runLater(() -> {
-                    procesoFirmaEnCurso = false;
+                    procesoFirmaEnCurso.set(false);
                     String mensajeError = e.getMessage() != null ? e.getMessage() : "Error desconocido al firmar";
 
                     actualizarEstado("Error en la firma");
                     btnSign.setDisable(false);
                     mostrarAlertaErrorDetallado("Error al Firmar Documento", mensajeError);
-                    notificarErrorAlFrontend(mensajeError);
+                    notificarErrorAlFrontend(mensajeError, sesion.idDocumento);
 
                     FirmaApplication.ocultarVentana();
                 });
@@ -732,13 +846,14 @@ public class FirmaController implements Initializable {
         return mensajeError;
     }
 
-    private String enviarABackendSignature(DocumentoFirma doc, String documentoFirmado) throws Exception {
+    private String enviarABackendSignature(DocumentoFirma doc, String documentoFirmado, SesionFirma sesion) throws Exception {
         System.out.println("Enviando documento firmado al SERVICIO SIGNATURE: " + doc.getNombre());
 
-        System.out.println("Token recibido:");
-        System.out.println("  - Longitud: " + (tokenAuth != null ? tokenAuth.length() : "null"));
-        System.out.println("  - Primeros 50 chars: " + (tokenAuth != null ? tokenAuth.substring(0, Math.min(50, tokenAuth.length())) : "null"));
-        System.out.println("  - Últimos 20 chars: " + (tokenAuth != null ? tokenAuth.substring(Math.max(0, tokenAuth.length()-20)) : "null"));
+        String tokenAuth = sesion.tokenAuth;
+        // SEGURIDAD: no loguear fragmentos del token de auth - los logs
+        // persisten indefinidamente en disco (ver LogService) y un token con
+        // varios caracteres reales expuestos es una fuga de credenciales.
+        System.out.println("Token recibido: " + (tokenAuth != null ? "presente (longitud " + tokenAuth.length() + ")" : "null"));
 
         Long idDocumentoBackend;
         String bucket;
@@ -755,12 +870,12 @@ public class FirmaController implements Initializable {
             tamanoDocumento = doc.getTamanoDocumento() != null ? doc.getTamanoDocumento().intValue() : 0;
             codigoGenerado = doc.getCodigoGenerado();
         } else {
-            if (datosBackendJson == null) {
+            if (sesion.datosBackendJson == null) {
                 throw new Exception("No se recibieron datos del backend para el servicio signature");
             }
 
             ObjectMapper mapper = new ObjectMapper();
-            JsonNode datosBackend = mapper.readTree(datosBackendJson);
+            JsonNode datosBackend = mapper.readTree(sesion.datosBackendJson);
 
             idDocumentoBackend = datosBackend.path("idDocumento").asLong();
             bucket = datosBackend.path("bucket").asText();
@@ -770,9 +885,23 @@ public class FirmaController implements Initializable {
             codigoGenerado = datosBackend.path("codigoGenerado").asText();
         }
 
-        String baseUrl = baseUrlBackend != null ? baseUrlBackend : ConfigService.getSignatureBackendUrl();
+        String baseUrl = sesion.baseUrlBackend != null ? sesion.baseUrlBackend : ConfigService.getSignatureBackendUrl();
 
         HttpService httpService = new HttpService(baseUrl);
+
+        if ("compartido".equals(sesion.origen)) {
+            return httpService.procesarFirmaCompartida(
+                    idDocumentoBackend,
+                    documentoFirmado,
+                    bucket,
+                    usuarioModificacion,
+                    nombreDocumento,
+                    tamanoDocumento,
+                    codigoGenerado,
+                    sesion.tokenTempCompartido
+            );
+        }
+
         httpService.setAuthToken(tokenAuth);
 
         return httpService.procesarFirmaSignature(
@@ -787,30 +916,74 @@ public class FirmaController implements Initializable {
     }
 
     private void notificarExitoAlFrontend() {
+        notificarExitoAlFrontend(idDocumentoActual);
+    }
+
+    private void notificarExitoAlFrontend(String idDocumento) {
         if (localServer != null) {
-            localServer.notificarResultado(true, null, idDocumentoActual);
+            localServer.notificarResultado(true, null, idDocumento);
             System.out.println("Éxito notificado al servidor local");
         }
     }
 
     private void notificarErrorAlFrontend(String error) {
+        notificarErrorAlFrontend(error, idDocumentoActual);
+    }
+
+    private void notificarErrorAlFrontend(String error, String idDocumento) {
         if (localServer != null) {
-            localServer.notificarResultado(false, error, idDocumentoActual);
+            localServer.notificarResultado(false, error, idDocumento);
             System.out.println("Error notificado al servidor local: " + error);
         }
     }
 
+    /**
+     * SEGURIDAD: baseUrlBackend/baseUrlDocument llegan sin autenticación
+     * desde el servidor HTTP local (cualquier proceso/página del mismo
+     * equipo puede invocar acjfirma://), y de ahí terminan siendo la URL a la
+     * que se manda el documento firmado junto con el token de auth (ver
+     * enviarABackendSignature/procesarConServicioSignature). Si el valor
+     * recibido no coincide con un origen ya configurado localmente en
+     * ConfigService para esta instalación, se descarta (null) y el llamador
+     * cae al backend configurado en esta máquina en vez de a uno arbitrario.
+     */
+    private String validarUrlBackendConfiable(String url, String nombreParametro) {
+        if (url == null) {
+            return null;
+        }
+        if (ConfigService.esOrigenConfiable(url)) {
+            return url;
+        }
+        System.err.println("Se ignoró " + nombreParametro + " porque su origen no es confiable: " + url);
+        return null;
+    }
+
     public void procesarDocumentosDesdeWeb(String documentosJson, String idDocumento, String token,
-                                           String datosBackendJson, String baseUrlBackend) {
+                                           String datosBackendJson, String baseUrlBackend,
+                                           String origen, String baseUrlDocument) {
         Platform.runLater(() -> {
+            // Si ya hay una firma en curso, esta invocación se descarta en vez
+            // de pisar documentosParaFirmar/configuracionFirma/tokenAuth/etc.
+            // mientras el hilo de firma anterior todavía los está leyendo (ver
+            // SesionFirma más arriba) - esa superposición era la causa de las
+            // fallas "aleatorias" reportadas al firmar/seleccionar certificado.
+            if (procesoFirmaEnCurso.get()) {
+                System.out.println("Se ignoró una nueva invocación: ya hay un proceso de firma en curso (idDocumento=" + idDocumento + ")");
+                mostrarAlerta("Firma en curso", "Ya hay un documento en proceso de firma. Espere a que termine e intente nuevamente.");
+                return;
+            }
+
             try {
                 documentosRecibidosDesdeWeb = true;
                 this.idDocumentoActual = idDocumento;
                 this.tokenAuth = token;
                 this.datosBackendJson = datosBackendJson;
-                this.baseUrlBackend = baseUrlBackend;
+                this.baseUrlBackend = validarUrlBackendConfiable(baseUrlBackend, "baseUrlBackend");
+                this.origenActual = origen;
+                this.baseUrlDocument = validarUrlBackendConfiable(baseUrlDocument, "baseUrlDocument");
 
                 System.out.println("=== PROCESANDO DOCUMENTOS ===");
+                System.out.println("Origen: " + origen);
                 System.out.println("Base URL Backend: " + baseUrlBackend);
                 System.out.println("Datos backend recibidos: " + (datosBackendJson != null ? "SÍ" : "NO"));
                 System.out.println("=============================");
@@ -837,30 +1010,59 @@ public class FirmaController implements Initializable {
                 throw new RuntimeException("No se recibieron documentos para firmar");
             }
 
+            boolean esCompartido = "compartido".equals(origenActual);
+
             HttpService httpServiceS3 = new HttpService(ConfigService.getS3BackendUrl());
             httpServiceS3.setAuthToken(token);
+
+            HttpService httpServiceDocument = esCompartido
+                    ? new HttpService(baseUrlDocument != null ? baseUrlDocument : ConfigService.getDocumentBackendUrl())
+                    : null;
 
             List<DocumentoFirma> documentosFinal = new ArrayList<>();
 
             for (JsonNode metaDoc : documentosMetadatos.get("documentos")) {
                 String keyDocumento = metaDoc.path("keyDocumento").asText();
-                if (keyDocumento == null || keyDocumento.isEmpty()) {
-                    throw new RuntimeException("No se pudo extraer keyDocumento de los metadatos");
-                }
-
-                System.out.println("Obteniendo documento del S3: " + keyDocumento);
-                String documentoJsonS3 = httpServiceS3.obtenerDocumentos(keyDocumento);
-                JsonNode s3Root = mapper.readTree(documentoJsonS3);
-                JsonNode s3Docs = s3Root.path("documentos");
-                if (!s3Docs.isArray() || s3Docs.isEmpty()) {
-                    throw new RuntimeException("No se pudo obtener del S3 el documento: " + keyDocumento);
-                }
 
                 DocumentoFirma doc = new DocumentoFirma();
-                doc.setNombre(metaDoc.path("nombre").asText(metaDoc.path("titulo").asText("Documento")));
-                doc.setKeyDocumento(keyDocumento);
-                doc.setContenidoBase64(s3Docs.get(0).path("contenido").asText());
                 doc.setTipo("PDF");
+
+                if (esCompartido) {
+                    String tokenCompartido = metaDoc.path("tokenCompartido").asText();
+                    if (tokenCompartido == null || tokenCompartido.isEmpty()) {
+                        throw new RuntimeException("No se recibió el token del documento compartido");
+                    }
+
+                    System.out.println("Obteniendo documento compartido (enlace), token presente");
+                    String[] resultado = httpServiceDocument.obtenerDocumentoCompartido(tokenCompartido);
+                    JsonNode compartidoRoot = mapper.readTree(resultado[0]);
+                    JsonNode compartidoDocs = compartidoRoot.path("documentos");
+                    if (!compartidoDocs.isArray() || compartidoDocs.isEmpty()) {
+                        throw new RuntimeException("No se pudo obtener el documento compartido");
+                    }
+
+                    this.tokenTempCompartido = resultado[2];
+
+                    doc.setNombre(metaDoc.path("nombre").asText(metaDoc.path("titulo").asText("Documento")));
+                    doc.setKeyDocumento(keyDocumento);
+                    doc.setContenidoBase64(compartidoDocs.get(0).path("contenido").asText());
+                } else {
+                    if (keyDocumento == null || keyDocumento.isEmpty()) {
+                        throw new RuntimeException("No se pudo extraer keyDocumento de los metadatos");
+                    }
+
+                    System.out.println("Obteniendo documento del S3: " + keyDocumento);
+                    String documentoJsonS3 = httpServiceS3.obtenerDocumentos(keyDocumento);
+                    JsonNode s3Root = mapper.readTree(documentoJsonS3);
+                    JsonNode s3Docs = s3Root.path("documentos");
+                    if (!s3Docs.isArray() || s3Docs.isEmpty()) {
+                        throw new RuntimeException("No se pudo obtener del S3 el documento: " + keyDocumento);
+                    }
+
+                    doc.setNombre(metaDoc.path("nombre").asText(metaDoc.path("titulo").asText("Documento")));
+                    doc.setKeyDocumento(keyDocumento);
+                    doc.setContenidoBase64(s3Docs.get(0).path("contenido").asText());
+                }
 
                 PosicionFirma pos = new PosicionFirma();
                 JsonNode posNode = metaDoc.path("posicionFirma");
@@ -959,13 +1161,33 @@ public class FirmaController implements Initializable {
     }
 
     @FXML
-    private void onClearLogs() {
-        if (logArea != null) {
-            Platform.runLater(() -> {
-                logArea.clear();
-                logArea.appendText("[" + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) + "] Logs limpiados\n");
-            });
+    private void onAbrirCarpetaLogs() {
+        File carpeta = LogService.getCarpetaLogs();
+        if (carpeta == null || !carpeta.exists()) {
+            mostrarAlerta("Logs", "Todavía no se generó ningún archivo de logs.");
+            return;
         }
+        try {
+            Desktop.getDesktop().open(carpeta);
+        } catch (Exception e) {
+            mostrarAlerta("Logs", "No se pudo abrir la carpeta de logs: " + e.getMessage());
+        }
+    }
+
+    @FXML
+    private void onBorrarLogs() {
+        Alert confirmacion = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmacion.setTitle("Borrar logs");
+        confirmacion.setHeaderText("¿Borrar todos los archivos de logs guardados?");
+        confirmacion.setContentText("Esta acción no se puede deshacer.");
+
+        confirmacion.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                boolean exito = LogService.borrarLogs();
+                mostrarAlerta(exito ? "Logs" : "Logs",
+                        exito ? "Los logs se borraron correctamente." : "No se pudieron borrar algunos archivos de log.");
+            }
+        });
     }
 
     @FXML

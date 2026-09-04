@@ -1,5 +1,6 @@
 package com.acj.firma.acjfirmalocal;
 
+import com.acj.firma.acjfirmalocal.service.LogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.File;
@@ -17,6 +18,11 @@ import java.util.Map;
 public class Launcher {
 
     public static void main(String[] args) {
+        // Primero que nada: esto cubre tanto el arranque normal del daemon
+        // como el camino de reenvío a una instancia ya corriendo (que nunca
+        // llega a FirmaApplication.main), así ambos quedan registrados.
+        LogService.iniciar();
+
         // Configurar propiedades del sistema
         System.setProperty("javafx.preloader", "");
         System.setProperty("java.awt.headless", "false");
